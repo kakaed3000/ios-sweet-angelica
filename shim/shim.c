@@ -182,13 +182,19 @@ static void __attribute__((unused)) test_smp(void)
 	uint64_t self = rsr("mpidr_el1") & 0xffffff;
 	int64_t ret[NR_CPUS];
 
-	for (int i = 1; i < NR_CPUS; i++)
-		ret[i] = smc(PSCI_CPU_ON, (uint64_t)i << 8, (uintptr_t)secondary_entry, i);
+	for (int i = 1; i < NR_CPUS; i++) {
+		/* angelica: MPIDR Aff0 = core (0..7); sweet used Aff1 (i << 8).
+		 * Probe both; bit31 of ret marks that only the Aff1 retry ran. */
+		ret[i] = smc(PSCI_CPU_ON, (uint64_t)i, (uintptr_t)secondary_entry, i);
+		if ((uint32_t)ret[i] != 0)
+			ret[i] = smc(PSCI_CPU_ON, (uint64_t)i << 8,
+				     (uintptr_t)secondary_entry, i) | 0x80000000;
+	}
 	delay_ms(500);
 	for (int i = 1; i < NR_CPUS; i++) {
 		char label[] = "CPU0";
 		label[3] = '0' + i;
-		if (((uint64_t)i << 8) == self)
+		if ((uint64_t)i == self || ((uint64_t)i << 8) == self)
 			con_str(label, "is boot cpu");
 		else
 			con_hex2(label, "ret=", (uint32_t)ret[i], "mpidr=",

@@ -55,13 +55,16 @@ if [ -n "${1:-}" ]; then
 else
 	(cd out && rm -rf rd && mkdir rd && cd rd && find . | cpio -o -H newc --quiet | gzip -9 > ../ramdisk.bin)
 fi
-mkbootimg --header_version 2 --kernel out/Image --ramdisk out/ramdisk.bin \
+# LK on angelica only boots gzip kernels (stock and droidian are Image.gz).
+gzip -9 -c out/Image > out/Image.gz
+mkbootimg --header_version 2 --kernel out/Image.gz --ramdisk out/ramdisk.bin \
 	--dtb "$DTB" --base 0x40000000 --kernel_offset 0x80000 --ramdisk_offset 0x11b00000 \
 	--tags_offset 0x7880000 --dtb_offset 0x7880000 --pagesize 2048 \
 	--os_version 10.0.0 --os_patch_level 2023-01 \
 	--cmdline "bootopt=64S3,32N2,64N2" -o out/shim-boot.img
 # Round-trip check against the unpacker.
 python3 ../tools/unpack_bootv2.py out/shim-boot.img out/check
+cmp out/check/kernel out/Image.gz
 cmp out/check/ramdisk out/ramdisk.bin
 # Host render of the console layout.
 gcc -O1 -Wall -o out/host_test console.c host_test.c && ./out/host_test
