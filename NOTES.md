@@ -2,6 +2,26 @@
 
 ## Agent handoff / active work (2026-10-15, latest)
 
+### >>> BRANCH `angelica` (Redmi 9C, MT6765) - port started 2026-10-19 <<<
+
+**Goal:** the same iOS 16 stack on the user's Redmi 9C (angelica, Helio G35 MT6765, 8xA53). Work happens on branch `angelica` of this repo; sweet stays the proven reference (main). User answers in Russian; phone bootloader unlocked (`unlocked: yes`, `secure: no`, product `angelica`).
+
+**Done 2026-10-19:**
+- **HW recon complete.** Local refs in `/mnt/data/redmi9c-ios/` (outside git): `ref/boot-angelica.img` (Droidian boot, header v2) + `ref/unpacked/{kernel,ramdisk,dtb,header.txt}`, `ref/dtbo-angelica.img` -> `ref/dtbo-0.dtb`, full dumps `ref/base-dtb.txt`/`ref/dtbo-dump.txt`, FDT dumper `tools/fdtdump.py`; kernel source `kernel-src/` (Xiaomi dandelion-q-oss, branch base for angelica dtsi).
+- **Key hardware facts:** bootimg: page 2048, kernel_addr **0x40080000** (base 0x40000000 + offset 0x80000), ramdisk 0x51b00000, dtb/tags 0x47880000, cmdline `bootopt=64S3,32N2,64N2` (=> LK enters the 64-bit kernel at **EL3**, Linux head.S drops EL3/EL2->EL1; our shim now does the same). Droidian kernel blob = gzip (LK does not parse the arm64 Image header). GICv3: GICD 0x0c000000/0x40000, GICR 0x0c100000/0x200000 (8x128K), INTPOL 0x10200a80. Arch timer PPIs: secure phys 13, phys 14, virt **11** (=> INTID 27), hyp 10; clock-frequency 13 MHz (0xc65d40), take CNTFRQ from hardware. eMMC via **MSDC** msdc0 @0x11230000 (8-bit, HS400, 200MHz, non-removable) - no UFS: XNU root needs an MSDC driver (patch 0028/0030/0069 analogue). DRAM base 0x40000000; memory node in boot dtb is a 512MB template that LK patches at runtime (live FDT required). LK framebuffer (dtbo atag,videolfb): **fb_base 0x5e605000**, vram 0x17bb000 (8x 720x1600x4), fps 6000, lcm "hx83012d_vdo_hdp_boe_tongxingda", panel 720x1600 (Focaltech FTS touch: rst GPIO174, IRQ GPIO0). 8x A53 single cluster MPIDR Aff0 0..7 (16K pages supported, PSCI present).
+- **Shim ported and built** (clang+ld.lld on this host, no aarch64 cross-gcc): `shim/start.S` EL3/EL2->EL1h drop (x0=DTB kept, `el_check/el3_drop/el2_drop/el_drop_ret`, shared by secondary_entry); console fb 720x1600 @0x5e605000 (console.h, mmu.h FB_PHYS); shim.c GIC bases/timer INTIDs 27/30, reset via PSCI only (QCOM IMEM/PSHOLD gone), no-payload path = hardware dump + test_smp + test_gic then PSCI reset in ~3 min (UFS probe/mmu milestone code dropped from the build); build.sh: clang `--target=aarch64-linux-gnu`, `-fno-jump-tables` (clang otherwise bakes a .rodata string-pointer table with ABS64 -> rejected by the no-absolute-reloc check), ELF->Image via python (no objcopy), mkbootimg replicating the angelica header (kernel_offset 0x80000, text_offset 0x80000 in the Image header, dtb = `ref/unpacked/dtb` overridable via `DTB=`), unpack round-trip check. Artifact: **`shim/out/shim-boot.img`** (80KB Image + empty cpio ramdisk + dtb). `text_offset=0x80000` + `kernel_offset=0x80000` -> kernel_addr 0x40080000 == droidian's (avoid clobbering LK at 0x40008000).
+- Blocker: phone battery was too low for `fastboot boot` ("low power, need battery charging").
+
+**NEXT on the phone (user charges, then):**
+1. Control test: `fastboot boot ref/boot-angelica.img` (droidian boots -> RAM boot works).
+2. `fastboot boot ios-sweet/shim/out/shim-boot.img` -> expect red screen, `SHIM angelica: xnu loader / diag`, `LOADER no initrd in /chosen|no SWEETXNU payload`, then EL/DTB/CNTFRQ/PSCI lines + SMP/GIC results. Interpret: EL must print 1 (drop worked); DTB magic d00dfeed (LK passed x0=fdt); CNTFRQ 13MHz; test_gic VTIMER must count irqs=10.
+3. If black screen: photograph; check (a) EL drop/bootopt, (b) fb_base wrong (try to read LK videolfb atag via a recovery dump), (c) LK entry addr (image header text_offset/kernel_offset experiment).
+4. If LK does not put `linux,initrd-start/end` into /chosen: loader cannot find the payload (read LK's bootargs update path / fdt from recovery; fallback = patch fdt_chosen lookup to LK's own DT update scheme).
+Then: machine config XNU-side (clone patches 0004/0016/0017/0065 for MT6765: GIC reg-map, timer INTIDs 27/30, MPIDR Aff0, board name), mkadt angelica, GitHub Actions build (needs user's GitHub auth; `gh` not installed here), first xnu payload boot, then MSDC/XNU root driver (big) - sweet's UFS patches 0028/0030/0031/0034/0069 are the template.
+
+
+## Agent handoff / active work (2026-10-15, latest)
+
 ### >>> UPDATE 2026-10-18 (read first, then the 10-17 handoff below) <<<
 
 **STATE at end of 2026-10-18 (evening):**

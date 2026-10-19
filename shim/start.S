@@ -1,13 +1,14 @@
 /*
- * sweet boot shim entry: arm64 Linux Image header so Qualcomm ABL treats
- * us like a kernel. ABL enters at EL1, MMU/D-cache off, x0 = DTB pointer.
+ * angelica boot shim entry: arm64 Linux Image header so the MediaTek LK
+ * treats us like a kernel.  LK enters at EL3 (bootopt=64S3) or EL2,
+ * MMU/D-cache off, x0 = DTB pointer.  Drop to EL1h first.
  */
 	.section .text.head, "ax"
 	.globl _head
 _head:
 	b	_start			/* code0 */
 	.long	0			/* code1 */
-	.quad	0			/* text_offset */
+	.quad	0x80000			/* text_offset: base + 0x80000 = load addr */
 	.quad	_end			/* image_size (linked at 0) */
 	.quad	0xa			/* flags: LE, 4K pages, place anywhere */
 	.quad	0			/* res2 */
@@ -20,7 +21,51 @@ _head:
 	.globl _start
 _start:
 	msr	daifset, #0xf
-	mov	x19, x0			/* DTB pointer from ABL */
+	adr	x10, el1_start		/* continuation once at EL1 */
+	b	el_check
+
+/* PSCI CPU_ON target. x0 = context id = cpu index (1..7). */
+	.globl secondary_entry
+secondary_entry:
+	msr	daifset, #0xf
+	adr	x10, sec_el1_start
+
+/* Drop EL3/EL2 -> EL1h. x0 (DTB / context id) preserved; uses x9, x10. */
+el_check:
+	mrs	x9, CurrentEL
+	lsr	x9, x9, #2
+	cmp	x9, #3
+	b.eq	el3_drop
+	cmp	x9, #2
+	b.eq	el2_drop
+el_drop_ret:
+	br	x10
+
+el3_drop:
+	mov	x9, #0x5c1		/* SCR_EL3: RES1|RW|HCE|SMD|NS */
+	msr	scr_el3, x9
+	mov	x9, #0x3c5		/* SPSR: EL1h, DAIF masked */
+	msr	spsr_el3, x9
+	adr	x9, el2_drop
+	msr	elr_el3, x9
+	eret
+
+el2_drop:
+	mrs	x9, cnthctl_el2		/* EL1 may use the physical timers */
+	orr	x9, x9, #3		/* EL1PCTEN | EL1PCEN */
+	msr	cnthctl_el2, x9
+	msr	cnthp_ctl_el2, xzr
+	msr	cntvoff_el2, xzr
+	mov	x9, #(1 << 31)		/* HCR_EL2.RW: EL1 is AArch64 */
+	msr	hcr_el2, x9
+	mov	x9, #0x3c5
+	msr	spsr_el2, x9
+	adr	x9, el_drop_ret
+	msr	elr_el2, x9
+	eret
+
+el1_start:
+	mov	x19, x0			/* DTB pointer from the bootloader */
 	msr	spsel, #1
 	adr	x1, _stack_top
 	mov	sp, x1
@@ -39,10 +84,7 @@ _start:
 3:	wfe
 	b	3b
 
-/* PSCI CPU_ON target. x0 = context id = cpu index (1..7). */
-	.globl secondary_entry
-secondary_entry:
-	msr	daifset, #0xf
+sec_el1_start:
 	msr	spsel, #1
 	adr	x1, _sec_stacks
 	add	x1, x1, x0, lsl #12

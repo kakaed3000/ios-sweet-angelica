@@ -1,24 +1,20 @@
 /*
- * Milestone 2: one boot answers the questions that decide the XNU port.
+ * angelica (MT6765) boot shim diagnostics: one boot answers the questions
+ * that decide the XNU port.
  *   - CPU feature registers (16K granule, GIC sysreg interface)
- *   - PSCI/SMCCC version and which PSCI calls the Qualcomm TZ offers
+ *   - PSCI/SMCCC version and which PSCI calls the MTK BL31 offers
  *   - SMP: PSCI CPU_ON for the 7 secondaries, each reports its MPIDR
- *   - GICv3 Group 1 IRQ from the virtual timer (INTID 19 on Qualcomm)
+ *   - GICv3 Group 1 IRQ from the virtual timer (INTID 27 on MT6765)
  * Any unexpected exception paints a blue panic screen.
  */
 #include <stdint.h>
 #include "console.h"
-#include "mmu.h"
 #include "loader.h"
-#include "ufs.h"
 
-#define IMEM_RESTART_REASON	0x146aa65cUL	/* qcom,msm-imem restart_reason@65c */
-#define RESTART_BOOTLOADER	0x77665500U
-#define PSHOLD			0x0c264000UL
-
-#define GICD_BASE		0x17a00000UL
-#define GICR_BASE		0x17a60000UL
-#define GICR_SIZE		0x100000UL
+/* MT6765: GICv3 distributor + redistributor (DT interrupt-controller@0c000000) */
+#define GICD_BASE		0x0c000000UL
+#define GICR_BASE		0x0c100000UL
+#define GICR_SIZE		0x200000UL
 #define GICR_PE_SIZE		0x20000UL
 #define GICR_TYPER		0x08
 #define GICR_WAKER		0x14
@@ -30,8 +26,8 @@
 #define GICR_ISPENDR0		(GICR_SGI + 0x200)
 #define GICR_ISACTIVER0		(GICR_SGI + 0x300)
 #define GICR_ICFGR1		(GICR_SGI + 0xc04)
-#define VTIMER_INTID		19	/* DT: <GIC_PPI 3 ...>, not the usual 27 */
-#define PTIMER_INTID		18	/* DT: <GIC_PPI 2 ...> */
+#define VTIMER_INTID		27	/* DT: <GIC_PPI 11 ...> */
+#define PTIMER_INTID		30	/* DT: <GIC_PPI 14 ...> */
 #define SGI_INTID		1
 
 #define PSCI_VERSION		0x84000000UL
@@ -106,10 +102,7 @@ static void __attribute__((noreturn)) reset(unsigned after_s)
 	con_skip();
 	con_str("RESET", after_s > 20 ? "in 40s" : "in 20s");
 	delay_ms(after_s * 1000);
-	wr32(IMEM_RESTART_REASON, RESTART_BOOTLOADER);
-	__asm__ volatile("dsb sy" ::: "memory");
 	smc(PSCI_SYSTEM_RESET, 0, 0, 0);
-	wr32(PSHOLD, 0);
 	for (;;)
 		__asm__ volatile("wfe");
 }
@@ -342,94 +335,35 @@ static void test_gic(void)
 
 /* ---- main ---- */
 
-static void __attribute__((unused)) psci_line(const char *label, uint64_t fn)
-{
-	con_hex2(label, "feat=", smc(PSCI_FEATURES, fn, 0, 0), 0, 0);
-}
-
-static uint64_t scratch[8192];	/* 64KB, lives in our (later cacheable) image */
-
-static uint64_t ticks_fill(uint32_t c)
-{
-	uint64_t t = now();
-	con_clear(c);
-	return now() - t;
-}
-
-static uint64_t ticks_mem(void)
-{
-	uint64_t t = now();
-	for (int pass = 0; pass < 16; pass++)
-		for (int i = 0; i < 8192; i++)
-			scratch[i] = scratch[i] * 3 + i;
-	return now() - t;
-}
-
-static uint32_t to_us(uint64_t ticks)
-{
-	return ticks * 10 / 192;	/* 19.2 MHz */
-}
-
 void shim_main(uint64_t dtb)
 {
-	struct mmu_info mi;
-
 	/* An xnu payload in the ramdisk means: boot it (MMU stays off). */
 	stage = "loader";
 	con_clear(RED);
-	con_str("SHIM", "sweet milestone 4: xnu loader");
+	con_str("SHIM", "angelica: xnu loader / diag");
 	con_skip();
 	const char *why = loader_boot(dtb);
 	con_str("LOADER", why);
 	con_skip();
 
-	/* No payload: probe the internal UFS while the MMU is still off. */
-	stage = "ufs";
-	test_ufs();
+	/* No payload: hardware facts, then the SMP and GIC timer tests. */
+	stage = "diag";
+	con_hex2("EL", "cur=", (uint32_t)(rsr("currentel") >> 2),
+		 "mpidr=", (uint32_t)rsr("mpidr_el1"));
+	con_hex2("DTB", "at=", (uint32_t)dtb, "magic=",
+		 dtb ? __builtin_bswap32(rd32(dtb)) : 0);
+	con_hex("CNTFRQ", rsr("cntfrq_el0"));
+	con_hex2("MIDR", "id=", (uint32_t)rsr("midr_el1"),
+		 "mmfr0=", (uint32_t)rsr("id_aa64mmfr0_el1"));
 	con_skip();
-	/* Keep the probe results on screen (later tests clear it); reset after 3 min. */
-	con_str("UFS", "probe done, reset in ~3 min");
-	delay_ms(180000);
-	reset(20);
-
-	stage = "fill off";
-	uint64_t fill_off = ticks_fill(RED);
-	uint64_t mem_off = ticks_mem();
-
-	stage = "mmu enable";
-	int rc = mmu_enable(&mi);
-
-	stage = "fill on";
-	uint64_t fill_on = rc ? 0 : ticks_fill(RED);
-	uint64_t mem_on = rc ? 0 : ticks_mem();
-	if (rc)
-		con_clear(RED);
-
-	con_str("SHIM", "sweet milestone 3");
+	con_hex2("PSCI", "ver=", (uint32_t)smc(PSCI_VERSION, 0, 0, 0),
+		 "smccc=", (uint32_t)smc(SMCCC_VERSION, 0, 0, 0));
 	con_skip();
-	con_hex2("DTB", "at=", dtb, "magic=", dtb ? __builtin_bswap32(rd32(dtb)) : 0);
-	con_hex2("IMAGE", "lo=", mi.img_lo, "hi=", mi.img_hi);
-	con_hex2("MMU", "rc=", rc, "l3=", mi.n_l3);
-	con_hex2("TTBR0", "pa=", mi.ttbr, "pa_hi=", mi.ttbr >> 32);
-	con_hex("SCTLR0", mi.sctlr_before);
-	con_hex("SCTLR1", mi.sctlr_after);
-	con_hex("TCR", rsr("tcr_el1"));
-	con_hex2("PARANGE", "mmfr0=", rsr("id_aa64mmfr0_el1") & 0xf, "tg16=", (rsr("id_aa64mmfr0_el1") >> 20) & 0xf);
-	con_skip();
-	con_hex("PAR img", mmu_probe((uintptr_t)shim_main));
-	con_hex("PAR fb", mmu_probe(FB_PHYS + 0x1000));
-	con_hex("PAR gic", mmu_probe(GICD_BASE));
-	con_hex("PAR 12G", mmu_probe(0x300000000UL));
-	con_skip();
-	con_hex2("FILL us", "off=", to_us(fill_off), "on=", to_us(fill_on));
-	con_hex2("MEM us", "off=", to_us(mem_off), "on=", to_us(mem_on));
-	con_skip();
-
-	stage = "psci";
-	con_hex2("PSCI", "ver=", smc(PSCI_VERSION, 0, 0, 0), "smccc=", smc(SMCCC_VERSION, 0, 0, 0));
-	con_skip();
+	test_smp();
 	test_gic();
 
 	stage = "done";
+	con_str("DIAG", "complete; reset in ~3 min");
+	delay_ms(180000);
 	reset(40);
 }
