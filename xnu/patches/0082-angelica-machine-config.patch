@@ -38,7 +38,7 @@ index 9a748ea..b4c88f8 100644
 -ifneq ($(CURRENT_MACHINE_CONFIG),SWEET)
 +# sweet's Cortex-A76/A55 and angelica's Cortex-A53 have no pointer
 +# authentication: stay plain arm64
-+ifneq ($(filter SWEET ANGELICA,$(CURRENT_MACHINE_CONFIG)),)
++ifeq ($(filter SWEET ANGELICA,$(CURRENT_MACHINE_CONFIG)),)
  export ARCH_STRING_FOR_CURRENT_MACHINE_CONFIG := arm64e
  endif
  endif
@@ -73,6 +73,7 @@ index 0000000..4fe07d0
 +
 +#define SWEET                     1
 +#define ANGELICA                  1
++#define SWEET_SMP_MAX_CPUS        8
 +
 +#define ARM_ARCH_TIMER
 +#define __ARM_ARCH__              8
