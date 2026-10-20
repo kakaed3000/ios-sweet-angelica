@@ -378,6 +378,8 @@ void shim_main(uint64_t dtb)
 	con_clear(BLACK);
 	disp_probe();
 	con_str("SHIM", "angelica: xnu loader / diag");
+	con_hex2("MIDR", "id=", (uint32_t)rsr("midr_el1"),
+		 "mmfr0=", (uint32_t)rsr("id_aa64mmfr0_el1"));
 	con_skip();
 	const char *why = loader_boot(dtb);
 	con_str("LOADER", why);
