@@ -38,6 +38,8 @@
 3. If white: rebuild plain `./build.sh`, flash, report red diag screen lines (SHIM/LOADER/EL/DTB/CNTFRQ/PSCI/CPU1..7/VTIMER): EL must print 1, DTB magic d00dfeed, CNTFRQ 13000000, CPU1..7 ret=0 Aff0 encoding, VTIMER counting.
 4. XNU machine config is DONE (0082 + stage gates + xnu.yml, locally validated 82/82) - remaining XNU-side: **mkadt angelica** (constants above), then a workflow_dispatch ANGELICA kernel build (GitHub auth), first payload boot, then the MSDC/XNU root driver.
 
+**MSDC/XNU root driver (2026-10-20, written, not yet built):** `0083-angelica-msdc-root-device.patch` (applies cleanly after 0001-0082) adds `bsd/dev/sweet_msdc.c` + `bsd/conf/files` + the `rd=msdcroot0` hook in `IOKitBSDInit.cpp`. Polled single-block PIO CMD17 (no DMA), reuses the host/card state LK leaves (HS400), GPT scan by name (`msdcroot=`, default `userdata`), read-only 512-byte sectors, disk `msdcroot0`/`rmsdcroot0`, `d_open` refuses writes. Register map from `kernel-src/.../ComboA/msdc_reg.h`; MSDC0 @0x11230000 size 0x10000. `tools/mkadt.py` now emits `/sweet-msdc` (reg 0x11230000 0x10000) for `--angelica` only; sweet output unchanged structurally (`sweet-ufs` still emitted, no msdc node). Single-block reads are slow; multi-block CMD18 with CMD23 later (sweet 0069 analogue). Untested on hardware: first read will tell whether LK's HS400 state is reusable.
+
 
 
 ## Agent handoff / active work (2026-10-15, latest)

@@ -1,0 +1,532 @@
+diff --git a/bsd/conf/files b/bsd/conf/files
+index 6630131..bf41430 100644
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -105,6 +105,7 @@ bsd/dev/random/randomdev.c		standard
+ 
+ bsd/dev/memdev.c			standard
+ bsd/dev/sweet_ufs.c			standard
++bsd/dev/sweet_msdc.c			standard
+ bsd/dev/sweet_sample.c			standard
+ bsd/dev/sweet_keys.c			standard
+ bsd/dev/sweet_touch.c			standard
+diff --git a/bsd/dev/sweet_msdc.c b/bsd/dev/sweet_msdc.c
+new file mode 100644
+index 0000000..d330de0
+--- /dev/null
++++ b/bsd/dev/sweet_msdc.c
+@@ -0,0 +1,485 @@
++/*
++ * SWEET ANGELICA internal eMMC root device (read-only).
++ *
++ * LK already initialised the MediaTek MSDC0 host and the eMMC (our boot image
++ * came from this chip), so this driver reuses that state: polled single-block
++ * PIO reads (CMD17) through the controller FIFO, no DMA, no re-tuning. It
++ * finds one GPT partition by name (boot-arg msdcroot=, default "userdata")
++ * and exposes it as the BSD disk msdcroot0 (rmsdcroot0), with 512-byte
++ * logical sectors. Root on it with rd=msdcroot0. Writes are refused.
++ */
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/buf.h>
++#include <sys/conf.h>
++#include <sys/disk.h>
++#include <sys/errno.h>
++#include <sys/proc.h>
++#include <sys/uio.h>
++#include <miscfs/devfs/devfs.h>
++#include <kern/locks.h>
++#include <kern/clock.h>
++#include <machine/machine_routines.h>
++#include <vm/pmap.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include <libkern/libkern.h>
++
++/* osfmk/arm/machine_routines.h, not exported to the BSD layer */
++extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/* MediaTek MSDC register map (drivers/mmc/host/mediatek/ComboA/msdc_reg.h). */
++#define MSDC_CFG        0x00
++#define MSDC_INT        0x0c
++#define MSDC_INTEN      0x10
++#define MSDC_FIFOCS     0x14
++#define MSDC_RXDATA     0x1c
++#define SDC_CMD         0x34
++#define SDC_ARG         0x38
++#define SDC_STS         0x3c
++#define SDC_RESP0       0x40
++
++#define MSDC_INT_CMDRDY     (1u << 8)
++#define MSDC_INT_CMDTMO     (1u << 9)
++#define MSDC_INT_RSPCRCERR  (1u << 10)
++#define MSDC_INT_XFER_COMPL (1u << 12)
++#define MSDC_INT_DATTMO     (1u << 14)
++#define MSDC_INT_DATCRCERR  (1u << 15)
++
++#define MSDC_INT_CMDMASK    (MSDC_INT_CMDRDY | MSDC_INT_CMDTMO | MSDC_INT_RSPCRCERR)
++#define MSDC_INT_DATAMASK   (MSDC_INT_XFER_COMPL | MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)
++
++#define SDC_STS_SDCBUSY     (1u << 0)
++
++#define MSDC_FIFOCS_RXCNT   0xffu
++#define MSDC_BLOCK          512u                /* CMD17 block length */
++#define MSDC_FIFO_WORDS     (MSDC_BLOCK / 4)
++#define CMD_TIMEOUT_NS      (2ull * NSEC_PER_SEC)
++
++/* R1 card status: OUT_OF_RANGE and ERROR are fatal for a READ. */
++#define R1_OUT_OF_RANGE     (1u << 31)
++#define R1_ERROR            (1u << 19)
++
++static struct {
++	vm_offset_t regs;
++	uint64_t first_block, nblocks;          /* partition, in 512-byte sectors */
++	uint32_t secsize;                       /* logical sector size for the BSD layer */
++	uint8_t sector[MSDC_BLOCK];             /* one-sector bounce buffer */
++	int bmajor, cmajor;
++	dev_t bdev;
++	bool ready;
++} sm;
++
++static LCK_GRP_DECLARE(sweet_msdc_grp, "sweet_msdc");
++static LCK_MTX_DECLARE(sweet_msdc_lock, &sweet_msdc_grp);
++
++static inline uint32_t
++msdc_rd(uint32_t off)
++{
++	return *(volatile uint32_t *)(sm.regs + off);
++}
++
++static inline void
++msdc_wr(uint32_t off, uint32_t v)
++{
++	*(volatile uint32_t *)(sm.regs + off) = v;
++}
++
++static uint64_t
++msdc_deadline(uint64_t ns)
++{
++	uint64_t d;
++	nanoseconds_to_absolutetime(ns, &d);
++	return d + mach_absolute_time();
++}
++
++/*
++ * One command in polled mode. dtype: 0 = none, 1 = single block, 2 = multi.
++ * Returns 0 or an errno; R1 response in *resp.
++ */
++static int
++msdc_cmd(uint32_t opcode, uint32_t arg, uint32_t rsptyp, uint32_t dtype,
++    uint32_t *resp)
++{
++	uint64_t deadline = msdc_deadline(CMD_TIMEOUT_NS);
++	uint32_t ints;
++	uint32_t rawcmd = opcode | (rsptyp << 7) | (MSDC_BLOCK << 16) | (dtype << 11);
++
++	while (msdc_rd(SDC_STS) & SDC_STS_SDCBUSY) {
++		if (mach_absolute_time() > deadline) {
++			return ETIMEDOUT;
++		}
++		delay(1);
++	}
++	msdc_wr(MSDC_INT, MSDC_INT_CMDMASK | MSDC_INT_DATAMASK);
++
++	msdc_wr(SDC_ARG, arg);
++	msdc_wr(SDC_CMD, rawcmd);
++
++	for (;;) {
++		ints = msdc_rd(MSDC_INT) & MSDC_INT_CMDMASK;
++		if (ints) {
++			break;
++		}
++		if (mach_absolute_time() > deadline) {
++			return ETIMEDOUT;
++		}
++		delay(1);
++	}
++	msdc_wr(MSDC_INT, ints);
++	if (ints & (MSDC_INT_CMDTMO | MSDC_INT_RSPCRCERR)) {
++		return EIO;
++	}
++	if (resp) {
++		*resp = msdc_rd(SDC_RESP0);
++	}
++	return 0;
++}
++
++/* CMD17 of one 512-byte block into sm.sector; the caller holds the lock. */
++static int
++msdc_read_sector(uint64_t lba)
++{
++	uint64_t deadline = msdc_deadline(CMD_TIMEOUT_NS);
++	uint32_t resp = 0;
++	uint32_t *out = (uint32_t *)sm.sector;
++	uint32_t left = MSDC_FIFO_WORDS;
++	bool xfer_done = false;
++	int error;
++
++	error = msdc_cmd(17, (uint32_t)lba, 1, 1, &resp);
++	if (error) {
++		return error;
++	}
++	if (resp & (R1_OUT_OF_RANGE | R1_ERROR)) {
++		printf("SWEET MSDC: CMD17 %llu status 0x%x\n", lba, resp);
++		return EIO;
++	}
++
++	while (!(xfer_done && left == 0)) {
++		uint32_t ints = msdc_rd(MSDC_INT) & MSDC_INT_DATAMASK;
++		if (ints) {
++			msdc_wr(MSDC_INT, ints);
++		}
++		if (ints & (MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)) {
++			return EIO;
++		}
++		if (ints & MSDC_INT_XFER_COMPL) {
++			xfer_done = true;
++		}
++		uint32_t rx = msdc_rd(MSDC_FIFOCS) & MSDC_FIFOCS_RXCNT;
++		if (rx) {
++			if (rx > left) {
++				rx = left;
++			}
++			for (uint32_t i = 0; i < rx; i++) {
++				*out++ = msdc_rd(MSDC_RXDATA);
++			}
++			left -= rx;
++			continue;
++		}
++		if (mach_absolute_time() > deadline) {
++			return ETIMEDOUT;
++		}
++		delay(1);
++	}
++	return 0;
++}
++
++static int
++msdc_find_partition(const char *want)
++{
++	uint64_t entry_lba;
++	uint32_t nent, esz;
++	int error;
++
++	error = msdc_read_sector(1);
++	if (error) {
++		return error;
++	}
++	if (memcmp(sm.sector, "EFI PART", 8) != 0) {
++		printf("SWEET MSDC: no GPT\n");
++		return ENXIO;
++	}
++	memcpy(&entry_lba, sm.sector + 72, 8);
++	memcpy(&nent, sm.sector + 80, 4);
++	memcpy(&esz, sm.sector + 84, 4);
++	if (esz != 128 || nent == 0 || nent > 512) {
++		printf("SWEET MSDC: unsupported GPT entries %u x %u\n", nent, esz);
++		return ENXIO;
++	}
++
++	for (uint32_t i = 0; i < nent; i++) {
++		const uint8_t *e;
++		char name[37];
++		unsigned c;
++
++		/* Entries are packed 4 to a 512-byte sector. */
++		uint64_t sector = entry_lba + (i * esz) / MSDC_BLOCK;
++		uint32_t offset = (i * esz) % MSDC_BLOCK;
++
++		if (msdc_read_sector(sector)) {
++			return EIO;
++		}
++		e = sm.sector + offset;
++		for (c = 0; c < 36; c++) {
++			uint16_t ch = (uint16_t)(e[56 + 2 * c] | e[57 + 2 * c] << 8);
++			if (ch == 0 || ch > 0x7f) {
++				break;
++			}
++			name[c] = (char)ch;
++		}
++		name[c] = 0;
++		if (strcmp(name, want) != 0) {
++			continue;
++		}
++		uint64_t first, last;
++		memcpy(&first, e + 32, 8);
++		memcpy(&last, e + 40, 8);
++		if (last < first || last > UINT32_MAX) {
++			return ENXIO;
++		}
++		sm.first_block = first;
++		sm.nblocks = last - first + 1;
++		return 0;
++	}
++	printf("SWEET MSDC: no GPT partition named \"%s\"\n", want);
++	return ENOENT;
++}
++
++static int
++sweet_msdc_open(__unused dev_t dev, int flags, __unused int devtype, __unused struct proc *p)
++{
++	if (!sm.ready) {
++		return ENXIO;
++	}
++	return (flags & FWRITE) ? EROFS : 0;
++}
++
++static int
++sweet_msdc_close(__unused dev_t dev, __unused int flags, __unused int devtype, __unused struct proc *p)
++{
++	return 0;
++}
++
++static void
++sweet_msdc_strategy(buf_t bp)
++{
++	int error = 0;
++	caddr_t vaddr = NULL;
++	uint64_t off = (uint64_t)buf_blkno(bp) * sm.secsize;
++	uint32_t count = buf_count(bp);
++	uint64_t part_bytes = sm.nblocks * MSDC_BLOCK;
++
++	buf_setresid(bp, count);
++	if (!(buf_flags(bp) & B_READ)) {
++		error = EROFS;
++		goto done;
++	}
++	if (off > part_bytes || count > part_bytes - off) {
++		error = EINVAL;
++		goto done;
++	}
++	if (count == 0) {
++		goto done;
++	}
++	if (buf_map(bp, &vaddr)) {
++		error = EIO;
++		goto done;
++	}
++
++	lck_mtx_lock(&sweet_msdc_lock);
++	for (uint32_t done = 0; done < count;) {
++		uint64_t pos = off + done;
++		uint32_t in = (uint32_t)(pos % MSDC_BLOCK);
++		uint32_t want = MIN(count - done, MSDC_BLOCK - in);
++
++		error = msdc_read_sector(sm.first_block + pos / MSDC_BLOCK);
++		if (error) {
++			break;
++		}
++		memcpy(vaddr + done, sm.sector + in, want);
++		done += want;
++		buf_setresid(bp, count - done);
++	}
++	lck_mtx_unlock(&sweet_msdc_lock);
++	buf_unmap(bp);
++
++done:
++	if (error) {
++		buf_seterror(bp, error);
++	}
++	buf_biodone(bp);
++}
++
++static int
++sweet_msdc_ioctl(__unused dev_t dev, u_long cmd, caddr_t data, __unused int flag,
++    __unused struct proc *p, int is_char)
++{
++	uint32_t *f = (uint32_t *)data;
++	uint64_t *o = (uint64_t *)data;
++
++	switch (cmd) {
++	case DKIOCGETBLOCKSIZE:
++		*f = sm.secsize;
++		return 0;
++	case DKIOCSETBLOCKSIZE:
++		if (is_char) {
++			return ENODEV;
++		}
++		if (*f != MSDC_BLOCK) {
++			return EINVAL;
++		}
++		sm.secsize = *f;
++		return 0;
++	case DKIOCGETPHYSICALBLOCKSIZE:
++		*f = MSDC_BLOCK;
++		return 0;
++	case DKIOCGETBLOCKCOUNT:
++		*o = sm.nblocks * MSDC_BLOCK / sm.secsize;
++		return 0;
++	case DKIOCISWRITABLE:
++		*f = 0;
++		return 0;
++	case DKIOCGETMAXBLOCKCOUNTREAD:
++		*o = 1;
++		return 0;
++	case DKIOCGETMAXBLOCKCOUNTWRITE:
++		*o = 0;
++		return 0;
++	case DKIOCGETMAXSEGMENTCOUNTREAD:
++	case DKIOCGETMAXSEGMENTCOUNTWRITE:
++		*o = 1;
++		return 0;
++	case DKIOCGETMAXSEGMENTBYTECOUNTREAD:
++	case DKIOCGETMAXSEGMENTBYTECOUNTWRITE:
++		*o = MSDC_BLOCK;
++		return 0;
++	case DKIOCISFORMATTED:
++		*f = 1;
++		return 0;
++	default:
++		return ENOTTY;
++	}
++}
++
++static int
++sweet_msdc_bioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
++{
++	return sweet_msdc_ioctl(dev, cmd, data, flag, p, 0);
++}
++
++static int
++sweet_msdc_cioctl(dev_t dev, u_long cmd, caddr_t data, int flag, struct proc *p)
++{
++	return sweet_msdc_ioctl(dev, cmd, data, flag, p, 1);
++}
++
++static int
++sweet_msdc_psize(__unused dev_t dev)
++{
++	return sm.ready ? (int)MIN(sm.nblocks * MSDC_BLOCK / sm.secsize, INT_MAX) : -1;
++}
++
++static int
++sweet_msdc_read(dev_t dev, struct uio *uio, __unused int ioflag)
++{
++	return physio(sweet_msdc_strategy, NULL, dev, B_READ, minphys, uio, (int)sm.secsize);
++}
++
++static int
++sweet_msdc_write(__unused dev_t dev, __unused struct uio *uio, __unused int ioflag)
++{
++	return EROFS;
++}
++
++static const struct bdevsw sweet_msdc_bdevsw = {
++	.d_open     = sweet_msdc_open,
++	.d_close    = sweet_msdc_close,
++	.d_strategy = sweet_msdc_strategy,
++	.d_ioctl    = sweet_msdc_bioctl,
++	.d_dump     = eno_dump,
++	.d_psize    = sweet_msdc_psize,
++	.d_type     = D_DISK,
++};
++
++static const struct cdevsw sweet_msdc_cdevsw = {
++	.d_open       = sweet_msdc_open,
++	.d_close      = sweet_msdc_close,
++	.d_read       = sweet_msdc_read,
++	.d_write      = sweet_msdc_write,
++	.d_ioctl      = sweet_msdc_cioctl,
++	.d_stop       = eno_stop,
++	.d_reset      = eno_reset,
++	.d_ttys       = NULL,
++	.d_select     = eno_select,
++	.d_mmap       = eno_mmap,
++	.d_strategy   = eno_strat,
++	.d_reserved_1 = eno_getc,
++	.d_reserved_2 = eno_putc,
++	.d_type       = D_DISK,
++};
++
++static int
++sweet_msdc_init(void)
++{
++	DTEntry node;
++	uintptr_t const *reg = NULL;
++	unsigned int size = 0;
++	char want[64] = "userdata";
++	int error;
++
++	if (SecureDTLookupEntry(NULL, "/sweet-msdc", &node) != kSuccess ||
++	    SecureDTGetProperty(node, "reg", (void const **)&reg, &size) != kSuccess ||
++	    size < 2 * sizeof(uintptr_t)) {
++		printf("SWEET MSDC: no /sweet-msdc node in the device tree\n");
++		return ENXIO;
++	}
++	PE_parse_boot_argn("msdcroot", want, sizeof(want));
++
++	sm.regs = ml_io_map(reg[0], reg[1]);
++	sm.secsize = DEV_BSIZE;
++
++	lck_mtx_lock(&sweet_msdc_lock);
++	msdc_wr(MSDC_INTEN, 0);                 /* polled operation */
++	msdc_wr(MSDC_INT, MSDC_INT_CMDMASK | MSDC_INT_DATAMASK);
++	error = msdc_find_partition(want);
++	lck_mtx_unlock(&sweet_msdc_lock);
++	if (error) {
++		return error;
++	}
++
++	sm.bmajor = bdevsw_add(-1, &sweet_msdc_bdevsw);
++	if (sm.bmajor < 0) {
++		return ENXIO;
++	}
++	sm.cmajor = cdevsw_add_with_bdev(-1, &sweet_msdc_cdevsw, sm.bmajor);
++	if (sm.cmajor < 0) {
++		return ENXIO;
++	}
++	sm.bdev = makedev(sm.bmajor, 0);
++	devfs_make_node(sm.bdev, DEVFS_BLOCK, UID_ROOT, GID_OPERATOR, 0640, "msdcroot0");
++	devfs_make_node(makedev(sm.cmajor, 0), DEVFS_CHAR, UID_ROOT, GID_OPERATOR, 0640, "rmsdcroot0");
++	sm.ready = true;
++	printf("SWEET MSDC: \"%s\": first block 0x%llx, %llu MiB, read-only\n",
++	    want, sm.first_block, sm.nblocks * MSDC_BLOCK >> 20);
++	return 0;
++}
++
++/* Root device for rd=msdcroot0 (IOFindBSDRoot). */
++int sweet_msdc_rootdev(dev_t *dev);
++
++int
++sweet_msdc_rootdev(dev_t *dev)
++{
++	if (!sm.ready) {
++		int error = sweet_msdc_init();
++		if (error) {
++			return error;
++		}
++	}
++	*dev = sm.bdev;
++	return 0;
++}
++#endif /* ARM64_BOARD_CONFIG_ANGELICA */
+diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
+index e6c74aa..dffd17c 100644
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -784,6 +784,24 @@ IOFindBSDRoot( char * rootName, unsigned int rootNameSize,
+ 	}
+ #endif
+ 
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++//
++//	ANGELICA: root on a GPT partition of the internal eMMC (bsd/dev/sweet_msdc.c)
++//
++	if (strcmp(rdBootVar, "msdcroot0") == 0) {
++		extern int sweet_msdc_rootdev(dev_t *dev);
++		OSSafeReleaseNULL(matching);
++		int msdc_error = sweet_msdc_rootdev(root);
++		if (msdc_error) {
++			panic("IOFindBSDRoot: SWEET MSDC root %s unavailable: %d", rdBootVar, msdc_error);
++		}
++		strlcpy(rootName, rdBootVar, rootNameSize);
++		IOLog("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
++		*oflags = 0;
++		goto iofrootx;
++	}
++#endif
++
+ //
+ //	Now check if we are trying to root on a memory device
+ //

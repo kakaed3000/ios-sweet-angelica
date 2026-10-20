@@ -47,6 +47,8 @@ ANGELICA_ECID = 0x414e47454c000001  # 'ANGEL' + 1, synthetic
 # (ends at 0x60000000). 1.5 GB fits inside the smallest 2 GB variant.
 ANGELICA_PHYS_BASE = 0x60000000
 ANGELICA_MEM_SIZE = 0x60000000
+# eMMC host left running by LK; bsd/dev/sweet_msdc.c polls it.
+ANGELICA_MSDC, ANGELICA_MSDC_SIZE = 0x11230000, 0x10000
 
 BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
 
@@ -233,6 +235,13 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
         ('reg', u64(UFS, UFS_SIZE)),
     ])
 
+    # bsd/dev/sweet_msdc.c: the MSDC0 host LK leaves initialised on the eMMC.
+    msdc = node('sweet-msdc', [
+        ph(),
+        ('compatible', cstr('mediatek,mt6765-msdc')),
+        ('reg', u64(ANGELICA_MSDC, ANGELICA_MSDC_SIZE)),
+    ])
+
     # pmap_compute_max_asids requires the node even when no overrides are set.
     # An absent pmap-max-asids property selects XNU's own MAX_ASIDS default.
     # No effaceable storage: keybagd then reads /private/var/keybags/systembag.kb
@@ -270,7 +279,7 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
         ('manufacturer', cstr('Apple Inc.')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
-    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([] if qemu or angelica else [ufs]))
+    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([msdc] if angelica else ([] if qemu else [ufs])))
 
 
 if __name__ == '__main__':
