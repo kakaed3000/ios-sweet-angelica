@@ -20,9 +20,24 @@ _head:
 	.text
 	.globl _start
 _start:
+#if CANARY
+	/* Bisect build: paint the framebuffer white and park. No EL drop,
+	 * no stack, no C code - if this shows, entry + LK load are fine. */
+	mov	x1, #0x5000
+	movk	x1, #0x05e6, lsl #16	/* fb 0x5e605000 */
+	mov	w2, #-1			/* white, 32bpp */
+	movz	w3, #0x9400
+	movk	w3, #0x11, lsl #16	/* 720 * 1600 */
+1:	str	w2, [x1], #4
+	subs	w3, w3, #1
+	b.ne	1b
+2:	wfi
+	b	2b
+#else
 	msr	daifset, #0xf
 	adr	x10, el1_start		/* continuation once at EL1 */
 	b	el_check
+#endif
 
 /* PSCI CPU_ON target. x0 = context id = cpu index (1..7). */
 	.globl secondary_entry

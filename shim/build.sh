@@ -7,6 +7,8 @@ CC="clang --target=aarch64-linux-gnu"
 CFLAGS="-O2 -ffreestanding -nostdlib -fno-pic -mgeneral-regs-only -mstrict-align -fno-stack-protector -fno-jump-tables -Wall -Wextra"
 DTB="${DTB:-../../ref/unpacked/dtb}"
 [ -f "$DTB" ] || { echo "missing DTB: $DTB (set DTB=...)" >&2; exit 1; }
+[ -n "${CANARY:-}" ] && CFLAGS="$CFLAGS -DCANARY=1"
+OUT="${OUT:-out/shim-boot.img}"
 mkdir -p out
 for f in start.S shim.c console.c fdt.c loader.c; do
 	$CC $CFLAGS -c "$f" -o out/${f%.*}.o
@@ -56,14 +58,26 @@ else
 	(cd out && rm -rf rd && mkdir rd && cd rd && find . | cpio -o -H newc --quiet | gzip -9 > ../ramdisk.bin)
 fi
 # LK on angelica only boots gzip kernels (stock and droidian are Image.gz).
-gzip -9 -c out/Image > out/Image.gz
+gzip -9 -n -c out/Image > out/Image.gz
+# os_version 0 to match the droidian header exactly (LK may gate on it).
 mkbootimg --header_version 2 --kernel out/Image.gz --ramdisk out/ramdisk.bin \
 	--dtb "$DTB" --base 0x40000000 --kernel_offset 0x80000 --ramdisk_offset 0x11b00000 \
 	--tags_offset 0x7880000 --dtb_offset 0x7880000 --pagesize 2048 \
-	--os_version 10.0.0 --os_patch_level 2023-01 \
-	--cmdline "bootopt=64S3,32N2,64N2" -o out/shim-boot.img
+	--os_version 0.0.0 --os_patch_level 2000-01 \
+	--cmdline "bootopt=64S3,32N2,64N2 buildvariant=user" -o "$OUT"
+# Force os_version to 0 exactly like the droidian header (mkbootimg always
+# encodes a nonzero patch level).
+python3 - "$OUT" <<'EOF'
+import struct, sys
+p = sys.argv[1]
+d = bytearray(open(p, 'rb').read())
+assert d[:8] == b'ANDROID!'
+assert struct.unpack_from('<I', d, 40)[0] == 2  # header_version
+struct.pack_into('<I', d, 44, 0)                # os_version = 0 like droidian
+open(p, 'wb').write(d)
+EOF
 # Round-trip check against the unpacker.
-python3 ../tools/unpack_bootv2.py out/shim-boot.img out/check
+python3 ../tools/unpack_bootv2.py "$OUT" out/check
 cmp out/check/kernel out/Image.gz
 cmp out/check/ramdisk out/ramdisk.bin
 # Host render of the console layout.
