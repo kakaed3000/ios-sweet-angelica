@@ -1,0 +1,25 @@
+diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
+index 00568d3..5502ba9 100644
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -10981,12 +10981,20 @@ static_assert((_COMM_PAGE32_BASE_ADDRESS & ~ARM_TT_L2_OFFMASK) >= VM_MAX_ADDRESS
+  */
+ 
+ #elif (ARM_PGSHIFT == 12)
++#if !defined(ARM_LARGE_MEMORY)
+ /**
+  * Ensure that 64-bit devices using 4K pages can nest the commpage completely
+  * above the maximum userspace VA.
+  */
+ static_assert((_COMM_PAGE64_BASE_ADDRESS & ~ARM_TT_L1_OFFMASK) >= MACH_VM_MAX_ADDRESS);
+ #else
++/*
++ * Large-memory (macOS-style) kernels have MACH_VM_MAX_ADDRESS up at 128TB, so
++ * the 64-bit commpage necessarily lives inside the userspace VA range; as on
++ * 16K macOS, the VM reserves and protects it (vm_reserved_regions[]).
++ */
++#endif /* !defined(ARM_LARGE_MEMORY) */
++#else
+ #error Nested shared page mapping is unsupported on this config
+ #endif
+ 
