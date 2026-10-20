@@ -47,7 +47,7 @@ new file mode 100644
 index 0000000..4fe07d0
 --- /dev/null
 +++ b/pexpert/pexpert/arm64/ANGELICA.h
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,79 @@
 +/*
 + * Board config for the Redmi 9C ("angelica", MediaTek MT6765 / Helio G35):
 + * 8x Cortex-A53 (ARMv8.0: no PAN, no LSE), 16K pages, GICv3, no PAC.
