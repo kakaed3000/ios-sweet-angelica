@@ -20,11 +20,16 @@ _head:
 	.text
 	.globl _start
 _start:
+	msr	daifset, #0xf
+	movz	x4, #0x7000
+	movk	x4, #0x1000, lsl #16	/* toprgu 0x10007000 */
+	movz	w5, #0x2200, lsl #16	/* WDT_MODE key */
+	str	w5, [x4]		/* disable the bootloader watchdog */
 #if CANARY
 	/* Bisect build: paint the framebuffer white and park. No EL drop,
 	 * no stack, no C code - if this shows, entry + LK load are fine. */
 	mov	x1, #0x5000
-	movk	x1, #0x05e6, lsl #16	/* fb 0x5e605000 */
+	movk	x1, #0x5e60, lsl #16	/* fb 0x5e605000 */
 	mov	w2, #-1			/* white, 32bpp */
 	movz	w3, #0x9400
 	movk	w3, #0x11, lsl #16	/* 720 * 1600 */
@@ -34,7 +39,6 @@ _start:
 2:	wfi
 	b	2b
 #else
-	msr	daifset, #0xf
 	adr	x10, el1_start		/* continuation once at EL1 */
 	b	el_check
 #endif

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 CC="clang --target=aarch64-linux-gnu"
 CFLAGS="-O2 -ffreestanding -nostdlib -fno-pic -mgeneral-regs-only -mstrict-align -fno-stack-protector -fno-jump-tables -Wall -Wextra"
-DTB="${DTB:-../../ref/unpacked/dtb}"
+DTB="${DTB:-../../ref/stock/unpacked/dtb}"
 [ -f "$DTB" ] || { echo "missing DTB: $DTB (set DTB=...)" >&2; exit 1; }
 [ -n "${CANARY:-}" ] && CFLAGS="$CFLAGS -DCANARY=1"
 OUT="${OUT:-out/shim-boot.img}"
@@ -73,7 +73,7 @@ p = sys.argv[1]
 d = bytearray(open(p, 'rb').read())
 assert d[:8] == b'ANDROID!'
 assert struct.unpack_from('<I', d, 40)[0] == 2  # header_version
-struct.pack_into('<I', d, 44, 0)                # os_version = 0 like droidian
+struct.pack_into("<I", d, 44, 0x14000166)         # os_version as stock MIUI
 open(p, 'wb').write(d)
 EOF
 # Round-trip check against the unpacker.

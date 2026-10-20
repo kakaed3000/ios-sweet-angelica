@@ -176,6 +176,36 @@ void secondary_main(uint64_t idx)
 	smc(PSCI_CPU_OFF, 0, 0, 0);
 }
 
+/* The LK logo is live somewhere above 0x60000000: find the active DDP
+ * layer buffer from its address register and paint it white. */
+static void fill_white(uint32_t addr)
+{
+	if (addr < 0x60000000U || addr >= 0xc0000000U || (addr & 3))
+		return;
+	volatile uint32_t *p = (volatile uint32_t *)addr;
+	for (uint32_t i = 0; i < 0x600000 / 4; i++)
+		p[i] = 0xffffffffU;
+}
+
+static void disp_probe(void)
+{
+	static const uintptr_t bases[] = { 0x1400b000, 0x1400c000 };
+
+	for (int b = 0; b < 2; b++) {
+		uint32_t src = rd32(bases[b] + 0x02c);
+		for (int l = 0; l < 4; l++) {
+			if (!(src & (1U << l)))
+				continue;
+			uint32_t a = rd32(bases[b] + 0xf40 + l * 0x20);
+			if (a >= 0x60000000U && a < 0xc0000000U)
+				wr32(bases[b] + 0xf40 + l * 0x20, 0x5e605000U);
+		}
+	}
+	uint32_t a = rd32(0x1400d000 + 0xf00);
+	if (a >= 0x60000000U && a < 0xc0000000U)
+		wr32(0x1400d000 + 0xf00, 0x5e605000U);
+}
+
 static void __attribute__((unused)) test_smp(void)
 {
 	stage = "smp";
@@ -346,6 +376,7 @@ void shim_main(uint64_t dtb)
 	/* An xnu payload in the ramdisk means: boot it (MMU stays off). */
 	stage = "loader";
 	con_clear(RED);
+	disp_probe();
 	con_str("SHIM", "angelica: xnu loader / diag");
 	con_skip();
 	const char *why = loader_boot(dtb);
@@ -365,11 +396,8 @@ void shim_main(uint64_t dtb)
 	con_hex2("PSCI", "ver=", (uint32_t)smc(PSCI_VERSION, 0, 0, 0),
 		 "smccc=", (uint32_t)smc(SMCCC_VERSION, 0, 0, 0));
 	con_skip();
-	test_smp();
-	test_gic();
-
 	stage = "done";
-	con_str("DIAG", "complete; reset in ~3 min");
-	delay_ms(180000);
-	reset(40);
+	con_str("DIAG", "display takeover done");
+	for (;;)
+		__asm__ volatile("wfe");
 }
