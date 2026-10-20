@@ -96,7 +96,7 @@ index 023086f..45a7572 100644
  	b		common_start
  
 diff --git a/osfmk/arm64/sweet_early.c b/osfmk/arm64/sweet_early.c
-index 6928957..b7e7532 100644
+index 6928957..af2ee31 100644
 --- a/osfmk/arm64/sweet_early.c
 +++ b/osfmk/arm64/sweet_early.c
 @@ -1,5 +1,5 @@
@@ -106,7 +106,7 @@ index 6928957..b7e7532 100644
   * per-CPU state: panic() can reach this before a current thread exists.
   * start.s maps the splash framebuffer VA=PA as Normal Non-Cacheable memory.
   * arm_vm_init installs a reserved kernel VA alias before removing TTBR0;
-@@ -11,12 +11,24 @@
+@@ -11,12 +11,26 @@
  #include <stdint.h>
  #include <kern/misc_protos.h>
  
@@ -119,6 +119,7 @@ index 6928957..b7e7532 100644
 +#define EARLY_STRIDE (2880u / 4)
 +#define EARLY_SCALE 1u
 +#define EARLY_MARK_W 32u
++#define EARLY_TOP_ROWS 3u
 +#else
 +#define EARLY_FB_PHYS 0x9c000000u
  #define EARLY_WIDTH 1080u
@@ -126,6 +127,7 @@ index 6928957..b7e7532 100644
  #define EARLY_STRIDE (4320u / 4)
  #define EARLY_SCALE 2u
 +#define EARLY_MARK_W 48u
++#define EARLY_TOP_ROWS 0u
 +#endif
 +
 +static volatile uint32_t *early_fb = (volatile uint32_t *)(uintptr_t)EARLY_FB_PHYS;
@@ -133,7 +135,21 @@ index 6928957..b7e7532 100644
  #define EARLY_CELL_W (8u * EARLY_SCALE)
  #define EARLY_CELL_H (16u * EARLY_SCALE)
  #define EARLY_ROWS ((EARLY_HEIGHT - 32u) / EARLY_CELL_H)
-@@ -94,7 +106,7 @@ sweet_early_mark(unsigned int stage, const char *label)
+@@ -47,6 +61,13 @@ sweet_early_putc(char c)
+ 	}
+ 	if (!early_started) {
+ 		early_started = 1;
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++		for (unsigned int r = 0; r < EARLY_ROWS; r++) {
++			early_row = r;
++			sweet_early_clear_row();
++		}
++#endif
++		early_row = EARLY_TOP_ROWS;
+ 		sweet_early_clear_row();
+ 	}
+ 	if (c == '\r') {
+@@ -94,7 +115,7 @@ sweet_early_mark(unsigned int stage, const char *label)
  	}
  	uint32_t color = 0xff00ff00u | ((stage & 7u) * 32u << 16);
  	for (unsigned int y = EARLY_HEIGHT - 32; y < EARLY_HEIGHT; y++) {
