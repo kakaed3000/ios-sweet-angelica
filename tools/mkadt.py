@@ -33,6 +33,21 @@ VTIMER_INTID = 19
 QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
 QEMU_VTIMER_INTID = 27
 
+# ANGELICA (Redmi 9C, MT6765): 8x A53 in one cluster (MPIDR Aff0), GICv3 at
+# 0x0c000000, 13 MHz arch timer, PPI 11 => INTID 27. No UFS (MSDC eMMC driver
+# comes later). Framebuffer from the LK videolfb tag: 720x1600 @0x5e605000.
+ANGELICA_GICD, ANGELICA_GICD_SIZE = 0x0c000000, 0x40000
+ANGELICA_GICR, ANGELICA_GICR_SIZE = 0x0c100000, 0x200000
+ANGELICA_FB, ANGELICA_FB_SIZE = 0x5e605000, 0x17bb000
+ANGELICA_FB_W, ANGELICA_FB_H = 720, 1600
+ANGELICA_TIMEBASE = 13000000
+ANGELICA_VTIMER_INTID = 27
+ANGELICA_ECID = 0x414e47454c000001  # 'ANGEL' + 1, synthetic
+# Kernel-managed RAM: above the shim (base+0x80000), LK and the framebuffer
+# (ends at 0x60000000). 1.5 GB fits inside the smallest 2 GB variant.
+ANGELICA_PHYS_BASE = 0x60000000
+ANGELICA_MEM_SIZE = 0x60000000
+
 BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
 
 # The iOS userland is the iPhone X (iPhone10,3 / D22AP) IPSW. MobileGestalt
@@ -68,10 +83,36 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None, qemu=False, highmem=False):
+def build(seed=None, qemu=False, highmem=False, angelica=False):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
-    phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
-    gicd, gicr, timebase = (QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE) if qemu else (GICD, GICR, TIMEBASE)
+    if qemu and angelica:
+        raise SystemExit('--qemu and --angelica are exclusive')
+    if angelica:
+        phys_base, mem_size = ANGELICA_PHYS_BASE, ANGELICA_MEM_SIZE
+    else:
+        phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
+    if qemu:
+        gicd, gicr, gicd_size, gicr_size, timebase = QEMU_GICD, QEMU_GICR, 0x10000, 0x100000, QEMU_TIMEBASE
+        vtimer_intid = QEMU_VTIMER_INTID
+    elif angelica:
+        gicd, gicr = ANGELICA_GICD, ANGELICA_GICR
+        gicd_size, gicr_size = ANGELICA_GICD_SIZE, ANGELICA_GICR_SIZE
+        timebase = ANGELICA_TIMEBASE
+        vtimer_intid = ANGELICA_VTIMER_INTID
+    else:
+        gicd, gicr, gicd_size, gicr_size, timebase = GICD, GICR, GICD_SIZE, GICR_SIZE, TIMEBASE
+        vtimer_intid = VTIMER_INTID
+    if angelica:
+        fb, fb_size = ANGELICA_FB, ANGELICA_FB_SIZE
+        fb_w, fb_h = ANGELICA_FB_W, ANGELICA_FB_H
+        fb_stride = fb_w * 4
+        display_scale, canvas_w, canvas_h = 2, 720, 1600  # 360x800 pt @2x
+        ecid = ANGELICA_ECID
+    else:
+        fb, fb_size = FB, FB_SIZE
+        fb_w, fb_h, fb_stride = FB_W, FB_H, FB_STRIDE
+        display_scale, canvas_w, canvas_h = 3, 1125, 2436
+        ecid = SWEET_ECID
     seed = seed if seed is not None else os.urandom(64)
     phandle = iter(range(1, 1000))
     ph = lambda: ('AAPL,phandle', u32(next(phandle)))
@@ -95,13 +136,13 @@ def build(seed=None, qemu=False, highmem=False):
         # from /chosen, the pixel size from IOMobileFramebuffer. Scale 0 makes
         # SpringBoard's FBSDisplayMode "infxinf@0x" invalid. 1080x2400 @3x =
         # 360x800 points (like iPhone X class devices).
-        ('display-scale', u32(3)),
+        ('display-scale', u32(display_scale)),
         # XNU derives IOPlatformUUID (gethostuuid) from these on arm; without
         # them CFPreferences cannot use kCFPreferencesCurrentHost (no ByHost
         # files), so e.g. DataMigration never records LastSystemVersion and
         # migrates on every boot. Synthetic ECID (not the phone's); chip-id
         # of the A11 that the iPhone X userland expects.
-        ('unique-chip-id', struct.pack('<Q', SWEET_ECID)),
+        ('unique-chip-id', struct.pack('<Q', ecid)),
         ('chip-id', u32(0x8015)),
         # Security status as on a dev-fused, undemoted board (tuple 0,0,1,1):
         # MobileGestalt reads these from /chosen, and mobileactivationd's
@@ -119,17 +160,15 @@ def build(seed=None, qemu=False, highmem=False):
         # with CSR_ALLOW_UNRESTRICTED_FS (vm_unix.c shared region checks).
         node('asmb', [ph(), ('lp-sip0', u64(0x6f)), ('lp-sip1', u32(1))])])
 
-    # SWEET SMP: all eight cores in physical-core order (0-5 Cortex-A55,
-    # 6-7 Cortex-A76), one homogeneous cluster. The kernel defaults to one
-    # and uses cpus=N to select an initial prefix (N <= 8).
-    # QEMU retains its original single-CPU tree: its MPIDRs differ from sweet.
+    # One homogeneous cluster: sweet = 4xA55 + 4xA55/A76 mixed SoC, angelica =
+    # 8x A53 with MPIDR Aff1:Aff0 = 0x0:c (Aff0 only, so reg = core).
     cpu_nodes = []
     for core in range(1 if qemu else 8):
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
             ('device_type', cstr('cpu')),
-            ('compatible', cstr('qcom,kryo470') + cstr('ARM,v8')),
-            ('reg', u32(core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
+            ('compatible', cstr('arm,cortex-a53' if angelica else 'qcom,kryo470') + cstr('ARM,v8')),
+            ('reg', u32(core if angelica else core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
             ('cluster-id', u32(0)),  # descriptive; see ml_parse_cpu_topology
             ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
@@ -139,7 +178,7 @@ def build(seed=None, qemu=False, highmem=False):
             ('l3-cache-id', u32(0)),     # shared L3
             ('state', cstr('running' if core == 0 else 'stopped')),
             ('timebase-frequency', u32(timebase)),
-            ('clock-frequency', u32(2304000000 if core >= 6 else 1804800000)),
+            ('clock-frequency', u32(2301000000 if angelica else (2304000000 if core >= 6 else 1804800000))),
             ('bus-frequency', u32(100000000)),
             ('memory-frequency', u32(1866000000)),
             ('peripheral-frequency', u32(timebase)),
@@ -152,8 +191,8 @@ def build(seed=None, qemu=False, highmem=False):
         ph(),
         ('compatible', cstr('arm,gic-v3')),
         ('interrupt-controller', b''),
-        ('virtual-timer-intid', u32(QEMU_VTIMER_INTID if qemu else VTIMER_INTID)),
-        ('reg', u64(gicd - SOC_BASE, GICD_SIZE, gicr - SOC_BASE, GICR_SIZE)),
+        ('virtual-timer-intid', u32(vtimer_intid)),
+        ('reg', u64(gicd - SOC_BASE, gicd_size, gicr - SOC_BASE, gicr_size)),
     ])
     arm_io = node('arm-io', [
         ph(),
@@ -175,16 +214,16 @@ def build(seed=None, qemu=False, highmem=False):
             ph(),
             ('device_type', cstr('display-subsystem')),
             ('compatible', cstr('sweet,display')),
-            ('canvas-width', u32(1125)),
-            ('canvas-height', u32(2436)),
+            ('canvas-width', u32(canvas_w)),
+            ('canvas-height', u32(canvas_h)),
         ])])
 
     fbcon = node('sweet-fbcon', [
         ph(),
-        ('reg', u64(FB, FB_SIZE)),
-        ('width', u32(FB_W)),
-        ('height', u32(FB_H)),
-        ('stride', u32(FB_STRIDE)),
+        ('reg', u64(fb, fb_size)),
+        ('width', u32(fb_w)),
+        ('height', u32(fb_h)),
+        ('stride', u32(fb_stride)),
     ])
 
     # bsd/dev/sweet_ufs.c: the UFS host ABL leaves running (absolute physical reg).
@@ -214,21 +253,29 @@ def build(seed=None, qemu=False, highmem=False):
 
     # Identity of the iPhone X whose userland runs here: compatible[0] is
     # hw.model/hw.target (D22AP), model is hw.machine/hw.product
-    # (iPhone10,3). 'xiaomi,sweet' stays for SweetPlatformExpert matching.
+    # (iPhone10,3). 'xiaomi,sweet' stays for SweetPlatformExpert matching
+    # (0016 IONameMatch); angelica keeps it alongside its own compatible.
+    root_compat = ['D22AP', 'iPhone10,3']
+    if angelica:
+        root_compat += ['xiaomi,angelica', 'xiaomi,sweet', 'mediatek,mt6765']
+    else:
+        root_compat += ['xiaomi,sweet', 'qcom,sm7150']
+    root_compat.append('AppleARM')
     return node('device-tree', [
         ph(),
-        ('compatible', cstr('D22AP') + cstr('iPhone10,3') + cstr('xiaomi,sweet') + cstr('qcom,sm7150') + cstr('AppleARM')),
+        ('compatible', b''.join(cstr(s) for s in root_compat)),
         ('model', cstr('iPhone10,3')),
         ('target-type', cstr('D22')),
         ('target-sub-type', cstr('D22AP')),
         ('manufacturer', cstr('Apple Inc.')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
-    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([] if qemu else [ufs]))
+    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([] if qemu or angelica else [ufs]))
 
 
 if __name__ == '__main__':
-    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv)
+    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv,
+                 angelica='--angelica' in sys.argv)
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)
     if '--dump' in sys.argv:
