@@ -375,7 +375,7 @@ void shim_main(uint64_t dtb)
 {
 	/* An xnu payload in the ramdisk means: boot it (MMU stays off). */
 	stage = "loader";
-	con_clear(RED);
+	con_clear(BLACK);
 	disp_probe();
 	con_str("SHIM", "angelica: xnu loader / diag");
 	con_skip();

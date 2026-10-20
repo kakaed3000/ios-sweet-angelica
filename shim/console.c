@@ -5,10 +5,10 @@
 #include "console.h"
 #include "font.h"
 
-#define SCALE		3
+#define SCALE		2
 #define CH_W		(8 * SCALE)
 #define CH_H		(16 * SCALE)
-#define MARGIN		24
+#define MARGIN		8
 #define LABEL_COLS	8
 
 volatile uint32_t *con_fb = (volatile uint32_t *)FB_BASE;
