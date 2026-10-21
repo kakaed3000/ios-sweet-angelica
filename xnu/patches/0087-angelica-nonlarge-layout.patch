@@ -1,0 +1,117 @@
+diff --git a/makedefs/MakeInc.def b/makedefs/MakeInc.def
+index 7cb1f94..e4e6535 100644
+--- a/makedefs/MakeInc.def
++++ b/makedefs/MakeInc.def
+@@ -342,6 +342,18 @@ ARM64_PLKSEG_ADDR  =0xfffffe0004004000
+ ARM64_LINK_ADDR    =0xfffffe0007004000
+ endif
+ 
++# The Redmi 9C (angelica) runs Cortex-A53, which has no 16K granule, so its
++# kernel is built for 4K hardware page tables.  4K TTBR1 only supports the
++# classic non-large-memory (iOS-style) virtual layout: the macOS layout links
++# at -2TB and needs T1SZ=23 (an L0-start walk) that the 4K bootstrap page
++# tables and pmap do not implement.  Fall back to the upstream non-MacOSX
++# addresses (link at -64GB, low globals at -64GB, kexts at -64GB+64MB).
++ifneq ($(filter ANGELICA,$(CURRENT_MACHINE_CONFIG)),)
++LARGE_MEMORY_DEFINE=-UARM_LARGE_MEMORY
++ARM64_PLKSEG_ADDR  =0xfffffff004004000
++ARM64_LINK_ADDR    =0xfffffff007004000
++endif
++
+ 
+ CFLAGS_ARM64	= -Darm64 -DARM64 -D__ARM64__ -DLP64 -DPAGE_SIZE_FIXED -DVM_KERNEL_LINK_ADDRESS=$(ARM64_LINK_ADDR) \
+ 			$(LARGE_MEMORY_DEFINE) -momit-leaf-frame-pointer -fno-strict-aliasing -D__API__=v4 -mkernel
+diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
+index 5502ba9..00568d3 100644
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -10981,20 +10981,12 @@ static_assert((_COMM_PAGE32_BASE_ADDRESS & ~ARM_TT_L2_OFFMASK) >= VM_MAX_ADDRESS
+  */
+ 
+ #elif (ARM_PGSHIFT == 12)
+-#if !defined(ARM_LARGE_MEMORY)
+ /**
+  * Ensure that 64-bit devices using 4K pages can nest the commpage completely
+  * above the maximum userspace VA.
+  */
+ static_assert((_COMM_PAGE64_BASE_ADDRESS & ~ARM_TT_L1_OFFMASK) >= MACH_VM_MAX_ADDRESS);
+ #else
+-/*
+- * Large-memory (macOS-style) kernels have MACH_VM_MAX_ADDRESS up at 128TB, so
+- * the 64-bit commpage necessarily lives inside the userspace VA range; as on
+- * 16K macOS, the VM reserves and protects it (vm_reserved_regions[]).
+- */
+-#endif /* !defined(ARM_LARGE_MEMORY) */
+-#else
+ #error Nested shared page mapping is unsupported on this config
+ #endif
+ 
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index a49a66c..5fb5283 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1828,12 +1828,22 @@ init_ptpages(tt_entry_t *tt, vm_map_address_t start, vm_map_address_t end, bool
+ #if defined(SWEET)
+ /*
+  * The reserved low-globals/kernel region is excluded from VM allocation.
+- * Use the otherwise empty space above the 32MB low-globals block and below
++ * Use the otherwise empty space above the low-globals block and below
+  * gVirtBase for a Normal-NC framebuffer alias that survives bootstrap TTBR0
+- * teardown.  This is independent of the hardware granule: 4K maps three
+- * 2MB blocks where 16K maps one 32MB block.
++ * teardown.  On large-memory kernels the low globals start at
++ * VM_MIN_KERNEL_ADDRESS and the whole region up to the heap is reserved; the
++ * alias sits 32MB above that start.  On the classic non-large layout that
++ * the 4K (angelica) kernel uses the low globals start 64GB above VM_MIN and
++ * only [low globals, +32MB) is reserved, so the alias sits 16MB above that
++ * start to stay inside the reserved block (above the 2MB low-globals L2
++ * entry).  This is independent of the hardware granule: 4K maps three 2MB
++ * blocks where 16K maps one 32MB block.
+  */
++#if defined(ARM_LARGE_MEMORY)
+ #define SWEET_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + (32ULL << 20))
++#else /* !defined(ARM_LARGE_MEMORY) */
++#define SWEET_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + (64ULL << 30) + (16ULL << 20))
++#endif /* !defined(ARM_LARGE_MEMORY) */
+ #ifdef ARM64_BOARD_CONFIG_ANGELICA
+ #if defined(__ARM_16K_PG__)
+ #define SWEET_EARLY_FB_BLOCK_PHYS 0x5e000000ULL
+diff --git a/osfmk/mach/arm/vm_param.h b/osfmk/mach/arm/vm_param.h
+index c013288..5dda25f 100644
+--- a/osfmk/mach/arm/vm_param.h
++++ b/osfmk/mach/arm/vm_param.h
+@@ -134,7 +134,17 @@ extern int PAGE_SHIFT_CONST;
+ /* system-wide values */
+ #define MACH_VM_MIN_ADDRESS_RAW 0x0ULL
+ #if defined(XNU_PLATFORM_MacOSX) || defined(XNU_PLATFORM_DriverKit)
++#if !defined(ARM_LARGE_MEMORY)
++/*
++ * A non-large-memory kernel running with 4K hardware pages (Redmi 9C /
++ * angelica) keeps the classic layout: the 64-bit commpage lives in the 1GB
++ * block starting exactly at MACH_VM_MAX_ADDRESS (see the pmap.c assert),
++ * so the maximum userspace VA must be the pre-macOS value.
++ */
++#define MACH_VM_MAX_ADDRESS_RAW 0x0000000FC0000000ULL
++#else
+ #define MACH_VM_MAX_ADDRESS_RAW 0x00007FFFFE000000ULL
++#endif /* !defined(ARM_LARGE_MEMORY) */
+ #else
+ #define MACH_VM_MAX_ADDRESS_RAW 0x0000000FC0000000ULL
+ #endif
+diff --git a/pexpert/pexpert/arm64/ANGELICA.h b/pexpert/pexpert/arm64/ANGELICA.h
+index 93ae560..55d1fe5 100644
+--- a/pexpert/pexpert/arm64/ANGELICA.h
++++ b/pexpert/pexpert/arm64/ANGELICA.h
+@@ -41,8 +41,10 @@
+  * arm_init still sets PAGE_SHIFT_CONST to PAGE_MAX_SHIFT (16K), keeping
+  * the 16K software page size and the iOS userland ABI.
+  *
+- * Do not define __ARM64_PMAP_SUBPAGE_L1__: it caps TTBR1 at 512GB and this
+- * kernel is linked with ARM_LARGE_MEMORY at -2TB.
++ * Do not define __ARM64_PMAP_SUBPAGE_L1__: it caps TTBR1 at 512GB and with
++ * 4K pages the classic non-large-memory (iOS-style) layout is the only fully
++ * supported configuration.  The ANGELICA machine config therefore links the
++ * kernel at -64GB and clears ARM_LARGE_MEMORY (see makedefs/MakeInc.def).
+  */
+ 
+ #define HAS_GIC_V3                1
