@@ -3,7 +3,7 @@
 **Apple's iOS 16 kernel and userland on the Redmi 9C (angelica).**
 
 xnuL is the bare-metal xnu loader for angelica (formerly called `shim`). It takes over
-from the stock bootloader, sets up its own MMU and display, loads the XNU
+from MediaTek LK, sets up its own MMU and display, loads the XNU
 kernel together with a generated Apple Device Tree, and jumps into XNU.
 On top of the kernel runs the **unmodified iOS 16.7.16 (20H392) userland of the
 iPhone X**: launchd, the system daemons, backboardd, SpringBoard and the stock
@@ -26,7 +26,7 @@ markers 1–4), then stops at the next missing CPU feature. The iOS userland has
 
 | Area | State on `angelica` |
 | --- | --- |
-| Bootloader / flashing | Works: stock unlocked MediaTek LK → `fastboot flash boot` of the xnuL image. `fastboot boot` is unreliable on this LK variant; always flash. |
+| Bootloader / flashing | Works: BROM → preloader → stock unlocked MediaTek LK → `fastboot flash boot` of the xnuL image. `fastboot boot` is unreliable on this LK variant; always flash. |
 | xnuL | Works: EL3→EL1 drop, own page tables, display takeover (OVL/RDMA), live-FDT parsing, payload loading (Mach-O segments + ADT + boot_args), framebuffer console, watchdog disabled |
 | Console | Visible on the phone panel (720×1600, fb `0x5e605000`); there is no usable serial UART |
 | XNU kernel build | Works: 4K hardware page tables, 16K software pages (iOS ABI), ARMv8.0 code generation, classic non-large-memory virtual layout |
@@ -44,11 +44,13 @@ personal data on it.**
 ## How xnuL boots the kernel
 
 ```
-MediaTek preloader + LK (stock Xiaomi bootloader, unlocked)
-  -> fastboot flash boot xnul-boot.img        (roll back with the stock boot.img)
-     -> xnuL: EL drop, own MMU, display takeover, live FDT
-        -> payload (kernel Mach-O segments + ADT + boot-args)
-           -> XNU
+BootROM (BROM)
+  -> MediaTek preloader
+     -> LK (stock Xiaomi bootloader, unlocked)
+        -> fastboot flash boot xnul-boot.img   (roll back with the stock boot.img)
+           -> xnuL: EL drop, own MMU, display takeover, live FDT
+              -> payload (kernel Mach-O segments + ADT + boot-args)
+                 -> XNU
 ```
 
 The boot image is an Android `boot.img` v2: the gzip xnuL `Image` is the

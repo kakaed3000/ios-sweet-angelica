@@ -1,5 +1,5 @@
 /*
- * Just enough flattened-device-tree parsing to find what ABL put in
+ * Just enough flattened-device-tree parsing to find what LK put in
  * /chosen (initrd location). Big-endian, 4-byte aligned tokens.
  */
 #include "fdt.h"

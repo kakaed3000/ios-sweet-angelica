@@ -4,8 +4,8 @@
  * T0SZ=28 gives a 36-bit VA whose walk starts at level 2: one 16K table of
  * 2048 x 32MB blocks covers 64GB, identity mapped (VA == PA).
  *
- * Qualcomm XPUs fault on speculative reads of protected carve-outs (TZ,
- * hyp, modem...), so nothing is mapped cacheable except our own image:
+ * Protected carve-outs (TZ, hyp, modem, ...) fault on speculative reads,
+ * so nothing is mapped cacheable except our own image:
  *   - default: Device-nGnRnE, execute-never (same as MMU off)
  *   - the 32MB block(s) holding the image get an L3 table: image pages are
  *     Normal write-back, the rest of the block stays Device
@@ -105,7 +105,7 @@ int mmu_enable(struct mmu_info *info)
 	}
 	info->n_l3 = n_l3;
 
-	/* Image lines may be stale in the cache from ABL; we wrote memory directly. */
+	/* Image lines may be stale in the cache from LK; we wrote memory directly. */
 	dcache_inval_range(img_lo, img_hi);
 	__asm__ volatile("ic iallu; dsb sy; isb" ::: "memory");
 

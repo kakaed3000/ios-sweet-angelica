@@ -5,7 +5,10 @@ Naming: xnuL (pronounced "x-nu-L") is the xnu loader for angelica, formerly call
 The word "angelica" below always refers to the Redmi 9C (MediaTek MT6765), the
 only target of this tree; the active branch is `angelica`. Entries that predate
 the 2026-10-21 rebrand are historical: the upstream reference port is mentioned
-only as provenance and is not supported here.
+only as provenance and is not supported here. Those older entries mention ABL,
+UFS and Qualcomm hardware because they describe that reference device; the
+Redmi 9C has none of it. Its chain is BootROM (BROM) -> MediaTek preloader ->
+LK -> boot.img, and its storage is eMMC behind MSDC, not UFS.
 
 ## Agent handoff / active work (2026-10-15, latest)
 

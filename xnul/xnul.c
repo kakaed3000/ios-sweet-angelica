@@ -377,7 +377,7 @@ void xnul_main(uint64_t dtb)
 	stage = "loader";
 	con_clear(BLACK);
 	disp_probe();
-	con_str("xnuL", "xnu loader for angelica");
+	con_str("xnu loader for angelica", "");
 	con_hex2("MIDR", "id=", (uint32_t)rsr("midr_el1"),
 		 "mmfr0=", (uint32_t)rsr("id_aa64mmfr0_el1"));
 	con_skip();
