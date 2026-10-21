@@ -1,5 +1,5 @@
 /*
- * angelica (MT6765) boot shim diagnostics: one boot answers the questions
+ * xnuL (NexRedmi xnu loader) diagnostics: one boot answers the questions
  * that decide the XNU port.
  *   - CPU feature registers (16K granule, GIC sysreg interface)
  *   - PSCI/SMCCC version and which PSCI calls the MTK BL31 offers
@@ -371,13 +371,13 @@ static void test_gic(void)
 
 /* ---- main ---- */
 
-void shim_main(uint64_t dtb)
+void xnul_main(uint64_t dtb)
 {
 	/* An xnu payload in the ramdisk means: boot it (MMU stays off). */
 	stage = "loader";
 	con_clear(BLACK);
 	disp_probe();
-	con_str("SHIM", "angelica: xnu loader / diag");
+	con_str("xnuL", "NexRedmi Project | xnuL (xnu loader)");
 	con_hex2("MIDR", "id=", (uint32_t)rsr("midr_el1"),
 		 "mmfr0=", (uint32_t)rsr("id_aa64mmfr0_el1"));
 	con_skip();

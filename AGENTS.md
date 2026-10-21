@@ -1,4 +1,4 @@
-# Working on ios-sweet
+# Working on NexRedmi Project | xnuL
 
 - Read `NOTES.md` before starting; it contains the project goal, hardware facts,
   current blocker, local artifact locations and the next concrete action.
@@ -7,7 +7,8 @@
   build/boot results and unfinished work. Distinguish observations from guesses.
 - Commit completed changes. Use `gh` for GitHub Actions kernel builds and logs.
   Local single-file cross-compiles are useful before spending a CI run.
-- Device bring-up uses temporary `fastboot boot` images. Preserve the Android
+- Device bring-up on angelica uses `fastboot flash boot` (never `fastboot boot`)
+  of the xnuL image. Preserve the Android
   installation and partition backups. The user approved (2026-10-15) using
   internal UFS for iOS and said Android may be deleted: the iOS root goes
   into the existing `userdata` partition (no GPT changes). Keep bootloaders,

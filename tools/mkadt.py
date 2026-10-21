@@ -43,7 +43,7 @@ ANGELICA_FB_W, ANGELICA_FB_H = 720, 1600
 ANGELICA_TIMEBASE = 13000000
 ANGELICA_VTIMER_INTID = 27
 ANGELICA_ECID = 0x414e47454c000001  # 'ANGEL' + 1, synthetic
-# Kernel-managed RAM: above the shim (base+0x80000), LK and the framebuffer
+# Kernel-managed RAM: above xnuL (base+0x80000), LK and the framebuffer
 # (ends at 0x60000000). 1.5 GB fits inside the smallest 2 GB variant.
 ANGELICA_PHYS_BASE = 0x60000000
 ANGELICA_MEM_SIZE = 0x60000000
@@ -125,8 +125,8 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
         ('dram-size', u64(mem_size)),
         ('random-seed', seed),
         ('debug-enabled', u32(1)),
-        ('firmware-version', cstr('sweet-shim')),
-        ('system-firmware-version', cstr('sweet-shim')),
+        ('firmware-version', cstr('nexredmi-xnul')),
+        ('system-firmware-version', cstr('nexredmi-xnul')),
         # iBoot's SHA-384 of the boot manifest; /sbin/mount -P 1 exits unless
         # it exists (bind mounts /private/preboot/<hex>/usr/standalone/firmware,
         # tolerating a missing directory). Fixed stand-in value.

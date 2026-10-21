@@ -1,4 +1,10 @@
-# iOS 16 on sweet (Redmi Note 10 Pro, SM7150) - working notes
+# NexRedmi Project | xnuL - iOS 16 on Redmi 9C (angelica, MT6765) - working notes
+
+Naming: xnuL (pronounced "x-nu-L") is the NexRedmi xnu loader, formerly called
+`shim`; its sources live in `xnul/` and new images are `xnul/out/xnul-boot*.img`.
+The word "sweet" below always refers to the Redmi Note 10 Pro (SM7150), the
+device whose port this tree grew out of; the active branch is `angelica`
+(Redmi 9C).
 
 ## Agent handoff / active work (2026-10-15, latest)
 
@@ -26,8 +32,8 @@
   - `osfmk/arm/pmap/pmap.c`: revert the 0086 assert gate to the plain upstream `static_assert`.
   - `pexpert/pexpert/arm64/ANGELICA.h`: comment now describes the non-large layout.
   - Verified offline: applies cleanly on pristine xnu-8796.141.3 + 0001..0086; SWEET (16K, large) output unaffected. Expected geometry: kernel PA 0x61004000 (__TEXT at virt_base+0x1004000), `BA_VIRT_BASE=0xfffffff006000000`, `VM_MIN=-128GB`, T0SZ/T1SZ=25 (L1 roots), low globals 0xfffffff000000000, fb alias 0xfffffff010000000, physmap base `phystokv(topOfKernelData)+slide` (slide<=1GB). 0085's T1SZ=23 hunks stay but are inert (only compile under large).
-- **Next (2026-10-21): push 0087 -> CI -> flash.** Push branch `angelica` (or dispatch with `machine_config=ANGELICA`), download `xnu-kernel`, rebuild payload (`tools/mkpayload.py`) and image (`shim/build.sh`), ask the user for fastboot, `fastboot flash boot`, reboot; expect `SWEET EARLY` markers 1..20 (or a new, higher failure point).
-- **0087 FLASHED 2026-10-21: layout works, new wall = LSE atomics.** CI 39567802991 SUCCESS (`5406b84`, artifact 12331371006); kernel 16,719,064 B, link arguments confirm `-image_base 0xfffffff007004000` / `-segaddr __PRELINK_TEXT 0xfffffff004004000`. Payload `virt_base=0xfffffff006000000, entry=0xfffffff00740e488, kernel_end=0xfffffff00844c000`; image `shim/out/shim-boot-xnu-nl.img` (16,214,016 B, sha256 e1d52354...), flashed with the same cmdline (`rd=msdcroot0 keepsyms=1 -enable_kprintf_spam debug=0x14c`) and the ADT extracted from the previous payload. Screen log: `SWEET EARLY 1: arm_init entered, 2: done 3: done 4: done` then **`SWEET EARLY PANIC: Undefined kernel instruction pc=0xfffffff0072b55b0 @sleh.c:951`** -> the MMU/TTBR1 path is fixed (markers now run inside C code).
+- **Next (2026-10-21): push 0087 -> CI -> flash.** Push branch `angelica` (or dispatch with `machine_config=ANGELICA`), download `xnu-kernel`, rebuild payload (`tools/mkpayload.py`) and image (`xnul/build.sh`), ask the user for fastboot, `fastboot flash boot`, reboot; expect `SWEET EARLY` markers 1..20 (or a new, higher failure point).
+- **0087 FLASHED 2026-10-21: layout works, new wall = LSE atomics.** CI 39567802991 SUCCESS (`5406b84`, artifact 12331371006); kernel 16,719,064 B, link arguments confirm `-image_base 0xfffffff007004000` / `-segaddr __PRELINK_TEXT 0xfffffff004004000`. Payload `virt_base=0xfffffff006000000, entry=0xfffffff00740e488, kernel_end=0xfffffff00844c000`; image `xnul/out/shim-boot-xnu-nl.img` (16,214,016 B, sha256 e1d52354...), flashed with the same cmdline (`rd=msdcroot0 keepsyms=1 -enable_kprintf_spam debug=0x14c`) and the ADT extracted from the previous payload. Screen log: `SWEET EARLY 1: arm_init entered, 2: done 3: done 4: done` then **`SWEET EARLY PANIC: Undefined kernel instruction pc=0xfffffff0072b55b0 @sleh.c:951`** -> the MMU/TTBR1 path is fixed (markers now run inside C code).
 - **LSE root cause + `0088-angelica-cortex-a53.patch`.** pc 0xfffffff0072b55b0 = `_lck_grp_reference+8`; word `0xb8280028` = `ldadd w8, w8, [x1]` (ARMv8.1 LSE atomic), undefined on Cortex-A53 (ARMv8.0). Why: Apple clang on the Darwin target ignores `-march` as a baseline and keeps `-target-cpu apple-m1` (verified with clang 23: `-march=armv8-a+crypto -target arm64-apple-macosx14` still emits `ldadd`; the driver only ORs `+v8a +aes +crypto` onto apple-m1). Fix: `-mcpu=cortex-a53+crypto` (replaces the target CPU -> LL/SC `ldxr/stxr`; test-compiled). 0088 changes only that one line in `makedefs/MakeInc.def`.
 - **Next: CI 0088 -> rebuild payload/image -> flash.** Expect markers 5+ (`kernel_startup_bootstrap`), watch for the next wall (possible later surprises: CRC32 feature present in +crypto; if an undefined `crc32*` ever appears, revisit).
 

@@ -1,6 +1,9 @@
-# ios-sweet
+# NexRedmi Project | xnuL (xnu Loader)
 
-**Apple's iOS 16 running on a Redmi Note 10 Pro.**
+**Apple's iOS 16 running on Xiaomi phones.** xnuL is the bare-metal loader that
+boots the XNU kernel and hands it the iOS userland. The tree started as the
+Redmi Note 10 Pro (`sweet`, SM7150) port; the active branch `angelica` targets
+the **Redmi 9C (MT6765, 8x Cortex-A53)**. See `NOTES.md` for the current state.
 
 This project ports Apple's open-source XNU kernel (xnu-8796, the iOS 16 generation) to the Xiaomi Redmi Note 10 Pro (`sweet`, Qualcomm SM7150 / Snapdragon 732G). On top of it runs the **unmodified iOS 16.7.16 (20H392) userland of the iPhone X**: launchd, the system daemons, backboardd, SpringBoard and the stock apps.
 
@@ -12,7 +15,7 @@ As of **2026-10-18** the phone boots to the **iOS home screen**. You can unlock 
 
 | Area | State |
 | --- | --- |
-| Boot | Stock Xiaomi bootloader → `fastboot boot` of our shim → XNU. Nothing is flashed to the boot partitions |
+| Boot | Stock Xiaomi bootloader → `fastboot flash boot` of our xnuL image → XNU (flash-only: `fastboot boot` is unreliable on angelica's LK) |
 | CPU | 6 of the 8 cores (the six Cortex-A55s) via PSCI, 16K pages, GICv3 interrupts, timers |
 | Memory | About 3.95 GiB of the upper DDR bank |
 | Storage | Own UFS host driver; the iOS root is a journaled HFS+ volume in `userdata`, read/write |
@@ -38,8 +41,8 @@ As of **2026-10-18** the phone boots to the **iOS home screen**. You can unlock 
 
 ```
 ABL (stock Xiaomi bootloader, unlocked)
-  -> fastboot boot shim-boot.img              (temporary; nothing is flashed to boot)
-     -> shim: own MMU setup, reads the live FDT, loads the payload from the ramdisk
+  -> fastboot flash boot xnul-boot.img        (boot partition; use the stock image to roll back)
+     -> xnuL: own MMU setup, reads the live FDT, loads the payload from the ramdisk
         -> XNU Mach-O + generated Apple Device Tree (ADT) + boot-args
            -> XNU -> UFS driver -> HFS+ root in the userdata partition
               -> dyld + shared cache -> launchd -> daemons -> backboardd + SpringBoard
@@ -55,7 +58,7 @@ You need a Redmi Note 10 Pro (`sweet`, global or Indian variant, SM7150) with an
 
 Boot OrangeFox (or any recovery with adb root) temporarily and pull at least `persist`, `modemst1`, `modemst2`, `fsg`, `fsc` and `boot`, `dtbo`, `vbmeta`. They contain per-device calibration data. Keep them off git; `.gitignore` already excludes `backup/`, `dtb/` and `recovery/`.
 
-The shim needs the stock DTB. Unpack your phone's stock `boot.img`:
+xnuL needs the stock DTB. Unpack your phone's stock `boot.img`:
 
 ```sh
 python3 tools/unpack_bootv2.py backup/boot.img dtb/boot_unpacked   # -> dtb/boot_unpacked/dtb
@@ -100,10 +103,10 @@ ipsw img4 im4p extract research/ipsw-x/dt/Firmware/all_flash/DeviceTree.d22ap.im
 Needs `aarch64-linux-gnu-gcc` and `mkbootimg`.
 
 ```sh
-python3 tools/mkadt.py shim/out/sweet.adt --highmem
-python3 tools/mkpayload.py xnu/out/kernel.development.sweet shim/out/sweet.adt shim/out/payload.bin \
+python3 tools/mkadt.py xnul/out/sweet.adt --highmem
+python3 tools/mkpayload.py xnu/out/kernel.development.sweet xnul/out/sweet.adt xnul/out/payload.bin \
     --cmdline 'debug=0xc serial=3 cpus=6 keepsyms=1 -enable_kprintf_spam -noprogress rd=ufsroot0 unentitled_ios_sim_launch=1 ignition_level=1 wdt_test=no_user_checkin ufsrw=1 rootrw=1 launchd_unsecure_cache=1 wdt=-1 sweetfb_noconsole=1 sweetfb_hz=30'
-shim/build.sh ../shim/out/payload.bin      # -> shim/out/shim-boot.img
+xnul/build.sh ../xnul/out/payload.bin      # -> xnul/out/xnul-boot.img
 ```
 
 What the less obvious boot-args do:
@@ -123,7 +126,7 @@ What the less obvious boot-args do:
 ```sh
 fastboot -S 512M flash userdata ios16-root.simg   # ~7 minutes; do not unplug
 # Xiaomi's fastboot often hangs after a large flash: re-enter fastboot with Power + Volume down
-fastboot boot shim/out/shim-boot.img
+fastboot flash boot xnul/out/xnul-boot.img
 ```
 
 The first boot takes about 4–5 minutes on the Apple logo, then the lock screen appears. Swipe up to unlock. To get back to fastboot, hold Power + Volume down.
@@ -146,11 +149,11 @@ The log contains crash reports with backtraces (`CRASH name ...`), IOKit traces 
 
 | Path | What |
 | --- | --- |
-| `shim/` | Bare-metal boot shim (C + asm) packed as an Android boot.img v2 |
+| `xnul/` | xnuL, the bare-metal loader (C + asm) packed as an Android boot.img v2 |
 | `xnu/patches/` | The XNU patch series (applied in order by CI), plus staging scripts for libpthread, HFS and BearSSL |
 | `.github/workflows/xnu.yml` | Kernel CI build |
 | `tools/mkadt.py` | Generates the Apple Device Tree from sweet's MMIO layout and the iPhone X identity |
-| `tools/mkpayload.py` | Packs kernel + ADT + boot-args into the shim payload |
+| `tools/mkpayload.py` | Packs kernel + ADT + boot-args into the xnuL payload |
 | `tools/mkiosroot.sh` | Builds the HFS+ iOS root from the IPSW images |
 | `tools/sweet-root-tweaks.py` | Bring-up changes to the root (Setup skip, activation, daemons) |
 | `tools/sweet-log-pull.sh`, `sweet-log.py` | Read the persistent kernel log from recovery |

@@ -4,7 +4,7 @@ dtb/
 recovery/
 # third-party/Apple sources fetched for reading
 research/
-shim/out/
+xnul/out/
 xnu/out/
 xnu/out-*/
 __pycache__/

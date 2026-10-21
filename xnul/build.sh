@@ -1,5 +1,6 @@
 #!/bin/bash
-# Build the shim and wrap it in a boot.img v2 matching angelica's stock header
+# Build xnuL (the NexRedmi xnu loader) and wrap it in a boot.img v2
+# matching angelica's stock header
 # (page 2048, base 0x40000000, kernel 0x40080000, dtb/tags 0x47880000).
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -8,21 +9,21 @@ CFLAGS="-O2 -ffreestanding -nostdlib -fno-pic -mgeneral-regs-only -mstrict-align
 DTB="${DTB:-../../ref/stock/unpacked/dtb}"
 [ -f "$DTB" ] || { echo "missing DTB: $DTB (set DTB=...)" >&2; exit 1; }
 [ -n "${CANARY:-}" ] && CFLAGS="$CFLAGS -DCANARY=1"
-OUT="${OUT:-out/shim-boot.img}"
+OUT="${OUT:-out/xnul-boot.img}"
 mkdir -p out
-for f in start.S shim.c console.c fdt.c loader.c; do
+for f in start.S xnul.c console.c fdt.c loader.c; do
 	$CC $CFLAGS -c "$f" -o out/${f%.*}.o
 done
 # The image runs wherever LK puts it with no relocation pass: only the
 # header's image_size (start.o, linked at 0) may be an absolute address.
-abs=$(readelf -r out/shim.o out/console.o out/fdt.o out/loader.o | grep -c ABS64 || true)
+abs=$(readelf -r out/xnul.o out/console.o out/fdt.o out/loader.o | grep -c ABS64 || true)
 [ "$abs" = 0 ] || { echo "error: $abs absolute relocations in C objects" >&2; exit 1; }
-$CC $CFLAGS -static -T shim.ld -fuse-ld=lld -Wl,--build-id=none -Wl,-N \
-	out/start.o out/shim.o out/console.o out/fdt.o out/loader.o -o out/shim.elf
+$CC $CFLAGS -static -T xnul.ld -fuse-ld=lld -Wl,--build-id=none -Wl,-N \
+	out/start.o out/xnul.o out/console.o out/fdt.o out/loader.o -o out/xnul.elf
 # ELF -> raw Image (no objcopy for aarch64 on this host).
 python3 - "$DTB" <<'EOF'
 import struct, sys
-d = open('out/shim.elf', 'rb').read()
+d = open('out/xnul.elf', 'rb').read()
 assert d[:4] == b'\x7fELF', 'not an ELF'
 phoff, = struct.unpack_from('<Q', d, 0x20)
 phentsize, phnum = struct.unpack_from('<HH', d, 0x36)
@@ -48,7 +49,7 @@ open('out/Image', 'wb').write(bytes(img))
 print('Image: %d bytes (linked at 0x%x)' % (len(img), base))
 EOF
 # Pad to image_size so .bss/stacks exist as zeroed bytes.
-size=$(readelf -Ws out/shim.elf | awk '$8=="_end"{print "0x"$2}')
+size=$(readelf -Ws out/xnul.elf | awk '$8=="_end"{print "0x"$2}')
 truncate -s "$((size))" out/Image
 # Ramdisk: an xnu payload (tools/mkpayload.py) if given as $1, else an empty
 # newc cpio (LK dislikes a zero-size ramdisk) -> diagnostics.
@@ -82,4 +83,4 @@ cmp out/check/kernel out/Image.gz
 cmp out/check/ramdisk out/ramdisk.bin
 # Host render of the console layout.
 gcc -O1 -Wall -o out/host_test console.c host_test.c && ./out/host_test
-ls -l out/Image out/shim-boot.img
+ls -l out/Image "$OUT"
