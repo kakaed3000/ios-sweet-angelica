@@ -1,0 +1,27 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -40,6 +40,7 @@
+ #define SDC_CFG         0x30
+ #define SDC_STS         0x3c
+ #define SDC_RESP0       0x40
++#define SDC_BLK_NUM     0x50
+ 
+ #define MSDC_INT_CMDRDY     (1u << 8)
+ #define MSDC_INT_CMDTMO     (1u << 9)
+@@ -176,6 +177,7 @@
+ 	bool xfer_done = false;
+ 	int error;
+ 
++	msdc_wr(SDC_BLK_NUM, 1);
+ 	error = msdc_cmd(17, (uint32_t)lba, 1, 1, &resp);
+ 	if (error) {
+ 		return error;
+@@ -210,7 +212,7 @@
+ 			left -= rx;
+ 		}
+ 		if (mach_absolute_time() > deadline || ++spin > 1000000u) {
+-			sm.last_stage = (left == 0) ? "data-complete" : "data-timeout";
++			sm.last_stage = "data-timeout";
+ 			kprintf("ANGELICA MSDC: CMD17 %llu data timeout int=0x%x left=%u fifo=0x%x spin=%u\n",
+ 			    (unsigned long long)lba, msdc_rd(MSDC_INT), left,
+ 			    msdc_rd(MSDC_FIFOCS), spin);
