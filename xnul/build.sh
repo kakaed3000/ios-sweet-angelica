@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build xnuL (the NexRedmi xnu loader) and wrap it in a boot.img v2
+# Build xnuL (the xnu loader for angelica) and wrap it in a boot.img v2
 # matching angelica's stock header
 # (page 2048, base 0x40000000, kernel 0x40080000, dtb/tags 0x47880000).
 set -euo pipefail

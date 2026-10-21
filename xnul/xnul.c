@@ -1,5 +1,5 @@
 /*
- * xnuL (NexRedmi xnu loader) diagnostics: one boot answers the questions
+ * xnuL (xnu loader for angelica) diagnostics: one boot answers the questions
  * that decide the XNU port.
  *   - CPU feature registers (16K granule, GIC sysreg interface)
  *   - PSCI/SMCCC version and which PSCI calls the MTK BL31 offers
@@ -377,7 +377,7 @@ void xnul_main(uint64_t dtb)
 	stage = "loader";
 	con_clear(BLACK);
 	disp_probe();
-	con_str("xnuL", "NexRedmi Project | xnuL (xnu loader)");
+	con_str("xnuL", "xnu loader for angelica");
 	con_hex2("MIDR", "id=", (uint32_t)rsr("midr_el1"),
 		 "mmfr0=", (uint32_t)rsr("id_aa64mmfr0_el1"));
 	con_skip();

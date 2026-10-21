@@ -1,6 +1,6 @@
-# NexRedmi Project | xnuL - iOS 16 on Redmi 9C (angelica, MT6765) - working notes
+# xnuL - xnu loader for angelica - working notes
 
-Naming: xnuL (pronounced "x-nu-L") is the NexRedmi xnu loader, formerly called
+Naming: xnuL (pronounced "x-nu-L") is the xnu loader for angelica, formerly called
 `shim`; its sources live in `xnul/` and new images are `xnul/out/xnul-boot*.img`.
 The word "angelica" below always refers to the Redmi 9C (MediaTek MT6765), the
 only target of this tree; the active branch is `angelica`. Entries that predate

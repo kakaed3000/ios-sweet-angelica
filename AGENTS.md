@@ -1,4 +1,4 @@
-# Working on NexRedmi Project | xnuL
+# Working on xnuL - xnu loader for angelica
 
 - Read `NOTES.md` before starting; it contains the project goal, hardware facts,
   current blocker, local artifact locations and the next concrete action.

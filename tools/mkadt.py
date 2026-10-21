@@ -92,8 +92,8 @@ def build(seed=None, qemu=False):
         ('dram-size', u64(mem_size)),
         ('random-seed', seed),
         ('debug-enabled', u32(1)),
-        ('firmware-version', cstr('nexredmi-xnul')),
-        ('system-firmware-version', cstr('nexredmi-xnul')),
+        ('firmware-version', cstr('angelica-xnul')),
+        ('system-firmware-version', cstr('angelica-xnul')),
         # iBoot's SHA-384 of the boot manifest; /sbin/mount -P 1 exits unless
         # it exists (bind mounts /private/preboot/<hex>/usr/standalone/firmware,
         # tolerating a missing directory). Fixed stand-in value.

@@ -1,8 +1,8 @@
-# NexRedmi Project | xnuL (xnu Loader)
+# xnuL - xnu loader for angelica
 
-**Apple's iOS 16 kernel and userland on Xiaomi phones.**
+**Apple's iOS 16 kernel and userland on the Redmi 9C (angelica).**
 
-xnuL is the NexRedmi bare-metal loader (formerly called `shim`). It takes over
+xnuL is the bare-metal xnu loader for angelica (formerly called `shim`). It takes over
 from the stock bootloader, sets up its own MMU and display, loads the XNU
 kernel together with a generated Apple Device Tree, and jumps into XNU.
 On top of the kernel runs the **unmodified iOS 16.7.16 (20H392) userland of the
@@ -119,7 +119,7 @@ primary log.
 | `xnul/` | xnuL, the bare-metal loader (C + asm) packed as an Android `boot.img` v2 |
 | `xnu/patches/` | XNU patch series, applied in order by CI |
 | `.github/workflows/xnu.yml` | Kernel CI build |
-| `tools/mkadt.py` | Generates the Apple Device Tree (MMIO, CPU, display, identity); `--angelica` for the Redmi 9C |
+| `tools/mkadt.py` | Generates the Apple Device Tree (MMIO, CPU, display, identity) for the Redmi 9C |
 | `tools/mkpayload.py` | Packs kernel + ADT + boot-args into the xnuL payload |
 | `tools/unpack_bootv2.py` | Android `boot.img` v2 unpacker (headers, DTB, round-trip checks) |
 | `tools/mkiosroot.sh` | Builds the HFS+ iOS root from IPSW images |

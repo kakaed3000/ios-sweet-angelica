@@ -1,5 +1,5 @@
 /*
- * xnuL (NexRedmi xnu loader) entry: arm64 Linux Image header so the MediaTek LK
+ * xnuL (xnu loader for angelica) entry: arm64 Linux Image header so the MediaTek LK
  * treats us like a kernel.  LK enters at EL3 (bootopt=64S3) or EL2,
  * MMU/D-cache off, x0 = DTB pointer.  Drop to EL1h first.
  */
