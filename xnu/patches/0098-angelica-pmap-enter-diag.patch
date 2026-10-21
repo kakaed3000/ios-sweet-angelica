@@ -1,0 +1,26 @@
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -5606,8 +5606,9 @@
+ 		 * As a result we require the exclusive pmap lock.
+ 		 */
+ 		if (((uintptr_t)pte_p) & 0x1f) {
+-			panic("%s: unaligned PTE, v=%p pte_p=%p new_pte=%p",
+-			    __func__, (void*)v, pte_p, (void*)new_pte);
++			panic("%s: unaligned PTE, v=%p pmap=%p type=%d pte_p=%p new_pte=%p caller=%p",
++			    __func__, (void*)v, pmap, pmap->type, pte_p, (void*)new_pte,
++			    __builtin_return_address(0));
+ 		}
+ 		pmap_assert_locked(pmap, PMAP_LOCK_EXCLUSIVE);
+ 		*old_pte = *pte_p;
+@@ -6349,6 +6350,11 @@
+ {
+ 	kern_return_t kr = KERN_FAILURE;
+ 
++	if (TEST_PAGE_RATIO_4 && ((uintptr_t)v & 0x3fff)) {
++		printf("ANGELICA PMAP: enter v=%p pmap=%p type=%d caller=%p\n",
++		    (void*)v, pmap, pmap->type, __builtin_return_address(0));
++	}
++
+ 
+ 	PMAP_TRACE(2, PMAP_CODE(PMAP__ENTER) | DBG_FUNC_START,
+ 	    VM_KERNEL_ADDRHIDE(pmap), VM_KERNEL_ADDRHIDE(v), pa, prot);

@@ -165,6 +165,7 @@ calibration data, or Apple's copyrighted files.
 | 0095 | Report the caller and virtual address when the 16K/4K PTE alignment guard fires |
 | 0096 | Power up the MSDC clock and report the exact CMD17 timeout phase |
 | 0097 | Identify the VA and pmap when page-protect hits an unaligned PTE |
+| 0098 | Identify the caller when an unaligned pmap_enter is attempted |
 
 ## Warnings
 
