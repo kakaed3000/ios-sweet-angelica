@@ -1,0 +1,69 @@
+diff --git a/bsd/dev/angelica_ufs.c b/bsd/dev/angelica_ufs.c
+--- a/bsd/dev/angelica_ufs.c
++++ b/bsd/dev/angelica_ufs.c
+@@ -671,7 +671,7 @@
+  * and writable a thread copies new ring blocks to the LAST 4 MiB + 4 KiB of
+  * the partition every ufslogsecs seconds (default 10), far behind the HFS
+  * image at its start. Device block 0 of that area is a header:
+- *   "ANGELICALOG" | u32 version 1 | u32 ring size | u64 total bytes written
++ *   "ANGELICA" | u32 version 1 | u32 ring size | u64 total bytes written
+  *   | u64 flush sequence
+  * ring offset of byte n = n % ring size. Read it from a recovery with
+  * tools/angelica-log-pull.sh. Disabled with boot-arg angelicalog=0.
+@@ -767,7 +767,7 @@
+ 		}
+ 		if (!error) {
+ 			struct angelica_log_header h = {
+-				.magic = { 'S', 'W', 'E', 'E', 'T', 'L', 'O', 'G' },
++				.magic = { 'A', 'N', 'G', 'E', 'L', 'I', 'C', 'A' },
+ 				.version = 1, .size = ANGELICA_LOG_SIZE, .total = total, .seq = ++seq,
+ 			};
+ 			bzero(bounce, UFS_BLOCK);
+diff --git a/osfmk/vm/vm_kern.c b/osfmk/vm/vm_kern.c
+--- a/osfmk/vm/vm_kern.c
++++ b/osfmk/vm/vm_kern.c
+@@ -3527,6 +3527,8 @@
+ 
+ 	vm_map_sizes(kernel_map, NULL, NULL, &largest_free_size);
+ 	largest_free_size = trunc_page(largest_free_size);
++	printf("KMEMDBG L0=%llx claims=%u\n", (unsigned long long)largest_free_size,
++	    kmem_claim_count);
+ 
+ 	/*
+ 	 * kasan and configs w/o *TRR need to have just one ptr range due to
+@@ -3543,6 +3545,8 @@
+ 	}
+ 	assert((total_claims & PAGE_MASK) == 0);
+ 	largest_free_size -= total_claims;
++	printf("KMEMDBG L=%llx pre=%llx\n", (unsigned long long)largest_free_size,
++	    (unsigned long long)total_claims);
+ 
+ 	/*
+ 	 * Use half the total available VA for all pointer allocations (this
+@@ -3568,6 +3572,9 @@
+ 	 * Add claims for kmem's ranges
+ 	 */
+ 	data_range_size += kmem_add_ptr_claims();
++	printf("KMEMDBG ptr=%llx meta=%llx spray=%llx data=%llx\n",
++	    (unsigned long long)ptr_range_size, (unsigned long long)kmem_meta_size,
++	    (unsigned long long)sprayqtn_range_size, (unsigned long long)data_range_size);
+ 	assert(data_range_size + sprayqtn_range_size +
+ 	    ((ptr_range_size + kmem_meta_size) * kmem_ptr_ranges) <=
+ 	    largest_free_size);
+@@ -3620,6 +3627,7 @@
+ 	 * do not admit this address to be part of any zone submap.
+ 	 */
+ 	start = kmem_fuzz_start();
++	printf("KMEMDBG fuzzend=%llx\n", (unsigned long long)start);
+ 
+ 	/*
+ 	 * Add claims for ptr and data kmem_ranges
+@@ -3641,6 +3649,8 @@
+ 		struct mach_vm_range *sp_range = sp.kc_range;
+ 		if (vm_map_locate_space(kernel_map, sp.kc_size, 0,
+ 		    VM_MAP_KERNEL_FLAGS_ANYWHERE(), &start, NULL) != KERN_SUCCESS) {
++			printf("KMEMDBG FAIL name=%s size=%llx start=%llx\n", sp.kc_name,
++			    (unsigned long long)sp.kc_size, (unsigned long long)start);
+ 			panic("kmem_range_init: vm_map_locate_space failing for claim %s",
+ 			    sp.kc_name);
+ 		}

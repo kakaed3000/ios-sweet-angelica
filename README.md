@@ -158,6 +158,7 @@ calibration data, or Apple's copyrighted files.
 | 0088 | Build ANGELICA with `-mcpu=cortex-a53+crypto` (no ARMv8.1 LSE atomics) |
 | 0089 | PFZ commpage trylock: `ldaxr`/`stxr` loop instead of LSE `casa` on non-LSE CPUs |
 | 0090 | Full ANGELICA rebrand of the final tree (SWEET paths/identifiers removed) |
+| 0091 | Fix the 8-byte ANGELICA log magic and add `kmem_range_init` failure diagnostics |
 
 ## Warnings
 
