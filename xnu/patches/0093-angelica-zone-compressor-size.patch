@@ -1,0 +1,30 @@
+--- a/osfmk/kern/zalloc.c
++++ b/osfmk/kern/zalloc.c
+@@ -160,13 +160,13 @@
+ #define ZONE_GUARD_SPARSE       (64  * 1024)
+ #endif /* ZSECURITY_CONFIG(SAD_FENG_SHUI) */
+ 
+-#if XNU_PLATFORM_MacOSX
++#if XNU_PLATFORM_MacOSX && !defined(ARM64_BOARD_CONFIG_ANGELICA)
+ #define ZONE_MAP_MAX            (32ULL << 30)
+ #define ZONE_MAP_VA_SIZE        (128ULL << 30)
+-#else /* XNU_PLATFORM_MacOSX */
++#else /* XNU_PLATFORM_MacOSX && !ARM64_BOARD_CONFIG_ANGELICA */
+ #define ZONE_MAP_MAX            (8ULL << 30)
+ #define ZONE_MAP_VA_SIZE        (24ULL << 30)
+-#endif /* !XNU_PLATFORM_MacOSX */
++#endif /* !XNU_PLATFORM_MacOSX || ANGELICA */
+ 
+ __enum_closed_decl(zm_len_t, uint16_t, {
+ 	ZM_CHUNK_FREE           = 0x0,
+--- a/osfmk/vm/vm_compressor.c
++++ b/osfmk/vm/vm_compressor.c
+@@ -811,7 +811,7 @@
+ 	compressor_pool_max_size = C_SEG_MAX_LIMIT;
+ 	compressor_pool_max_size *= c_seg_bufsize;
+ 
+-#if XNU_TARGET_OS_OSX
++#if XNU_TARGET_OS_OSX && !defined(ARM64_BOARD_CONFIG_ANGELICA)
+ 
+ 	if (vm_compression_limit == 0) {
+ 		if (max_mem <= (4ULL * 1024ULL * 1024ULL * 1024ULL)) {

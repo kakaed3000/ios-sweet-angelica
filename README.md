@@ -160,6 +160,7 @@ calibration data, or Apple's copyrighted files.
 | 0090 | Full ANGELICA rebrand of the final tree (SWEET paths/identifiers removed) |
 | 0091 | Fix the 8-byte ANGELICA log magic and add `kmem_range_init` failure diagnostics |
 | 0092 | Put the `kmem_range_init` claim layout into the panic string and retry a failed claim from the map start |
+| 0093 | Use the 24 GB zone map and the iOS compressor cap on ANGELICA instead of the macOS 128 GB/16x sizes |
 
 ## Warnings
 
