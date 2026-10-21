@@ -1,0 +1,20 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -28,7 +28,7 @@
+ 
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
+-extern pmap_paddr_t kvtophys(vm_offset_t va);
++extern addr64_t kvtophys(vm_offset_t va);
+ extern void flush_dcache(vm_offset_t addr, unsigned count, int phys);
+ 
+ /* MediaTek MSDC register map (drivers/mmc/host/mediatek/ComboA/msdc_reg.h). */
+@@ -191,7 +191,7 @@
+ msdc_read_sector(uint64_t lba)
+ {
+ 	uint64_t deadline = msdc_deadline(CMD_TIMEOUT_NS);
+-	pmap_paddr_t paddr;
++	addr64_t paddr;
+ 	uint32_t resp = 0;
+ 	uint32_t cfg, ctrl, ints;
+ 	int error;
