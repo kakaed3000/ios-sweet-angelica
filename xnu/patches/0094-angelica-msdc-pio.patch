@@ -1,0 +1,38 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -53,6 +53,8 @@
+ #define SDC_STS_SDCBUSY     (1u << 0)
+ 
+ #define MSDC_FIFOCS_RXCNT   0xffu
++#define MSDC_FIFOCS_CLR     (1u << 31)
++#define MSDC_CFG_PIO        (1u << 3)
+ #define MSDC_BLOCK          512u                /* CMD17 block length */
+ #define MSDC_FIFO_WORDS     (MSDC_BLOCK / 4)
+ #define CMD_TIMEOUT_NS      (2ull * NSEC_PER_SEC)
+@@ -196,6 +198,9 @@
+ 
+ 	error = msdc_read_sector(1);
+ 	if (error) {
++		printf("ANGELICA MSDC: GPT sector read failed: %d cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
++		    error, msdc_rd(MSDC_CFG), msdc_rd(SDC_STS), msdc_rd(MSDC_FIFOCS),
++		    msdc_rd(MSDC_INT));
+ 		return error;
+ 	}
+ 	if (memcmp(sm.sector, "EFI PART", 8) != 0) {
+@@ -443,10 +448,16 @@
+ 
+ 	lck_mtx_lock(&angelica_msdc_lock);
+ 	msdc_wr(MSDC_INTEN, 0);                 /* polled operation */
++	msdc_wr(MSDC_CFG, msdc_rd(MSDC_CFG) | MSDC_CFG_PIO);
++	msdc_wr(MSDC_FIFOCS, MSDC_FIFOCS_CLR);
+ 	msdc_wr(MSDC_INT, MSDC_INT_CMDMASK | MSDC_INT_DATAMASK);
++	printf("ANGELICA MSDC: regs %p cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
++	    (void *)sm.regs, msdc_rd(MSDC_CFG), msdc_rd(SDC_STS),
++	    msdc_rd(MSDC_FIFOCS), msdc_rd(MSDC_INT));
+ 	error = msdc_find_partition(want);
+ 	lck_mtx_unlock(&angelica_msdc_lock);
+ 	if (error) {
++		printf("ANGELICA MSDC: init failed: %d\n", error);
+ 		return error;
+ 	}
+ 
