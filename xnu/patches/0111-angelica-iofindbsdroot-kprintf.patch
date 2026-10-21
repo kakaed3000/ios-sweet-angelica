@@ -1,0 +1,29 @@
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -787,7 +787,7 @@
+ 			panic("IOFindBSDRoot: ANGELICA UFS root %s unavailable: %d", rdBootVar, ufs_error);
+ 		}
+ 		strlcpy(rootName, rdBootVar, rootNameSize);
+-		IOLog("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
++		kprintf("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
+ 		*oflags = 0;
+ 		goto iofrootx;
+ 	}
+@@ -810,7 +810,7 @@
+ 			panic("IOFindBSDRoot: ANGELICA MSDC root %s unavailable: %d", rdBootVar, msdc_error);
+ 		}
+ 		strlcpy(rootName, rdBootVar, rootNameSize);
+-		IOLog("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
++		kprintf("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
+ 		*oflags = 0;
+ 		goto iofrootx;
+ 	}
+@@ -841,7 +841,7 @@
+ 				rootName[1] = 'd';                                                              /* Build root name */
+ 				rootName[2] = (char) dchar;                                                     /* Build root name */
+ 				rootName[3] = 0;                                                                /* Build root name */
+-				IOLog("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
++				kprintf("BSD root: %s, major %d, minor %d\n", rootName, major(*root), minor(*root));
+ 				*oflags = 0;                                                                    /* Show that this is not network */
+ 
+ #if CONFIG_KDP_INTERACTIVE_DEBUGGING
