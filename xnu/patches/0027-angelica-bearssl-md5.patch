@@ -44,7 +44,7 @@ diff --git a/libkern/crypto/corecrypto_md5.c b/libkern/crypto/corecrypto_md5.c
 + * MD5_CTX carrying exactly its state: chaining value, byte count and the
 + * partial block, converted around each call like the corecrypto path does.
 + */
-+#include "sweet_bearssl/inc/bearssl_hash.h"
++#include "angelica_bearssl/inc/bearssl_hash.h"
 +
 +static void
 +MD5ToBr(MD5_CTX *md5_ctx, br_md5_context *br_ctx)
@@ -109,7 +109,7 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/hash/md5.c"
++#include "angelica_bearssl/src/hash/md5.c"
 +#endif
 diff --git a/libkern/crypto/sweet_dec32le.c b/libkern/crypto/sweet_dec32le.c
 new file mode 100644
@@ -118,7 +118,7 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/codec/dec32le.c"
++#include "angelica_bearssl/src/codec/dec32le.c"
 +#endif
 diff --git a/libkern/crypto/sweet_enc32le.c b/libkern/crypto/sweet_enc32le.c
 new file mode 100644
@@ -127,5 +127,5 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/codec/enc32le.c"
++#include "angelica_bearssl/src/codec/enc32le.c"
 +#endif

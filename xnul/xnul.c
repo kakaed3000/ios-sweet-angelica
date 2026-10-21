@@ -213,8 +213,8 @@ static void __attribute__((unused)) test_smp(void)
 	int64_t ret[NR_CPUS];
 
 	for (int i = 1; i < NR_CPUS; i++) {
-		/* angelica: MPIDR Aff0 = core (0..7); sweet used Aff1 (i << 8).
-		 * Probe both; bit31 of ret marks that only the Aff1 retry ran. */
+		/* angelica: MPIDR Aff0 = core (0..7). Probe Aff0 first, then the
+		 * Aff1 (i << 8) encoding as a fallback; bit31 marks the retry. */
 		ret[i] = smc(PSCI_CPU_ON, (uint64_t)i, (uintptr_t)secondary_entry, i);
 		if ((uint32_t)ret[i] != 0)
 			ret[i] = smc(PSCI_CPU_ON, (uint64_t)i << 8,

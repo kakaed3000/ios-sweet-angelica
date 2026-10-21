@@ -41,7 +41,7 @@
 + * SHA1_CTX carrying exactly its state: chaining value, byte count and the
 + * partial block, converted around each call like the corecrypto path does.
 + */
-+#include "sweet_bearssl/inc/bearssl_hash.h"
++#include "angelica_bearssl/inc/bearssl_hash.h"
 +
 +static void
 +SHA1ToBr(SHA1_CTX *sha1_ctx, br_sha1_context *br_ctx)
@@ -107,19 +107,19 @@
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/hash/sha1.c"
++#include "angelica_bearssl/src/hash/sha1.c"
 +#endif
 --- /dev/null
 +++ b/libkern/crypto/sweet_dec32be.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/codec/dec32be.c"
++#include "angelica_bearssl/src/codec/dec32be.c"
 +#endif
 --- /dev/null
 +++ b/libkern/crypto/sweet_enc32be.c
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/codec/enc32be.c"
++#include "angelica_bearssl/src/codec/enc32be.c"
 +#endif

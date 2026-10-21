@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Boot a SWEETXNU payload (tools/mkpayload.py) in QEMU's virt board.
+"""Boot a ANGELICAXNU payload (tools/mkpayload.py) in QEMU's virt board.
 
-  qemu-sweet.py PAYLOAD OUTDIR [--secs N] [--gdb]
+  qemu-angelica.py PAYLOAD OUTDIR [--secs N] [--gdb]
 
 Does what xnul/loader.c does on the phone, but on the host: places the
 kernel segments, ADT and boot_args at their physical addresses and starts
@@ -32,7 +32,7 @@ BOOT_LINE_LENGTH = 608
 def build_image(payload):
     """Return (phys_base, ram_image, boot_args_pa, entry_pa)."""
     magic, ver, nsegs = struct.unpack_from('<8sII', payload, 0)
-    assert magic == b'SWEETXNU' and ver == 1, 'not a SWEETXNU v1 payload'
+    assert magic == b'ANGELICAXNU' and ver == 1, 'not a ANGELICAXNU v1 payload'
     virt_base, entry_va, adt_off, adt_size, kernel_end, phys_base, mem_size = \
         struct.unpack_from('<7Q', payload, 0x10)
     cmdline = payload[0x48:0x48 + BOOT_LINE_LENGTH]
@@ -105,7 +105,7 @@ def decode_screen(raw, font):
 
 
 def screen_result(screen, unknown):
-    if 'panic(cpu ' in screen or 'SWEET EARLY PANIC:' in screen:
+    if 'panic(cpu ' in screen or 'ANGELICA EARLY PANIC:' in screen:
         status = 'panic'
     elif unknown:
         status = 'incomplete_decode'
@@ -152,7 +152,7 @@ def main():
     ap.add_argument('--secs', type=float, default=20)
     ap.add_argument('--gdb', action='store_true', help='start halted, gdb stub on :1234, no timeout')
     ap.add_argument('--hmp', action='append', default=[], help='extra monitor command run after stop (repeatable), e.g. "x /8gx 0xfffffe..."')
-    ap.add_argument('--cpu', default='cortex-a76')	# ARMv8.2 like Kryo 470, same ID_AA64MMFR0
+    ap.add_argument('--cpu', default='cortex-a76')	# ARMv8.2 model; the kernel itself targets A53
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')
     a = ap.parse_args()
@@ -178,7 +178,7 @@ def main():
     mon = f'{out}/mon.sock'
     if os.path.exists(mon):
         os.unlink(mon)
-    # virt RAM starts at 0x40000000: cover the payload's RAM (mkadt.py --highmem needs 8G).
+    # virt RAM starts at 0x40000000: cover the payload's RAM.
     mem_size = struct.unpack_from('<Q', payload, 0x40)[0]
     ram_gib = max(4, -(-(phys_base + mem_size - 0x40000000) // (1 << 30)))
     cmd = ['qemu-system-aarch64', '-M', 'virt,gic-version=3', '-cpu', a.cpu, '-smp', '1', '-m', f'{ram_gib}G',

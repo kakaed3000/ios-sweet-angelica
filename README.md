@@ -9,18 +9,10 @@ On top of the kernel runs the **unmodified iOS 16.7.16 (20H392) userland of the
 iPhone X**: launchd, the system daemons, backboardd, SpringBoard and the stock
 apps.
 
-Two devices are involved in this tree:
-
-| Device | Codename | SoC | Role |
-| --- | --- | --- | --- |
-| Redmi 9C | `angelica` | MediaTek MT6765 (Helio G35, 8× Cortex-A53) | **active target** (branch `angelica`) |
-| Redmi Note 10 Pro | `sweet` | Qualcomm SM7150 (Snapdragon 732G, 2× A76 + 6× A55) | separate upstream project ([dipa-studio/ios-sweet](https://github.com/dipa-studio/ios-sweet)) whose kernel patch base this tree started from |
-
-The Redmi Note 10 Pro work is **not an earlier goal of this project**: it is
-another project (`dipa-studio/ios-sweet`) that already runs iOS 16 on that
-phone. NexRedmi takes its kernel patch base and tooling and targets `angelica`.
-The word "sweet" in this tree always names that phone's codename, never this
-project.
+The single target is the **Redmi 9C** (`angelica`, MediaTek MT6765 / Helio G35,
+8× Cortex-A53). The kernel patch base and tooling were ported from the upstream
+`dipa-studio/ios-angelica` reference; this tree does not build for or support
+any other phone.
 
 > Status as of **2026-10-21**. This is an experimental bring-up, not a usable
 > phone OS. Apple's security model is mostly switched off.
@@ -28,7 +20,7 @@ project.
 ## Where the Redmi 9C port stands
 
 The loader side works and the kernel now survives the MMU handoff. XNU boots
-into `arm_init` and runs early C code (the framebuffer shows the `SWEET EARLY`
+into `arm_init` and runs early C code (the framebuffer shows the `ANGELICA EARLY`
 markers 1–4), then stops at the next missing CPU feature. The iOS userland has
 **not** been run on `angelica` yet.
 
@@ -40,34 +32,14 @@ markers 1–4), then stops at the next missing CPU feature. The iOS userland has
 | XNU kernel build | Works: 4K hardware page tables, 16K software pages (iOS ABI), ARMv8.0 code generation, classic non-large-memory virtual layout |
 | XNU early boot | Reaches `arm_init` and markers 1–4 (`arm_init`, platform expert, topology, CPU bootstrap) |
 | Barriers already fixed | 16K-page kernel on an A53 (the core has no 16K granule); TTBR1 walk from L0 with `T1SZ=23` under the 4K bootstrap tables; ARMv8.1 LSE atomics emitted by the Apple toolchain |
-| Current blocker | LSE codegen fix (`0088`) plus the PFZ assembly LL/SC fallback (`0089`) are committed; CI is rebuilding them. Nothing from this round has been flashed yet |
+| Current blocker | LSE codegen (`0088`) and the PFZ assembly LL/SC fallback (`0089`) are fixed and built; the image is flashed and XNU now panics in `kmem_range_init` (`vm_kern.c:3645`) while locating kernel-map claims |
 | iOS userland | Not started on `angelica` (no root filesystem flashed, no launchd/SpringBoard) |
 | Storage root | MSDC/eMMC root driver exists (`0083`, polled single-block reads, untested on hardware) |
 | Display/UI/touch/keys | Not implemented for `angelica` yet; the iOS graphics stack is the upstream project's |
 
-Everything below about the working GUI refers to the **separate
-`dipa-studio/ios-sweet` project for the Redmi Note 10 Pro**, not to this port.
-
-## What the upstream ios-sweet project does
-
-In that project the Redmi Note 10 Pro boots to the **iOS home screen** (as of 2026-10-18): you
-can unlock it, open Settings, pull down Control Center and the notification
-center, and use the touchscreen and hardware buttons. Rendering runs entirely on
-the CPU; there is no GPU driver.
-
-- Boot: stock ABL (Qualcomm) → their loader → XNU → UFS driver → HFS+ root in `userdata` →
-  dyld + shared cache → launchd → daemons → backboardd + SpringBoard
-- CPU: 6 of 8 cores (Cortex-A55s) via PSCI, GICv3, timers
-- Display: kernel IOSurface + IOMobileFramebuffer (`AppleCLCD`), CPU rendering,
-  frames copied into the bootloader framebuffer, presented as an iPhone X panel
-  (1125×2436)
-- Touch: Goodix GT9896 over I²C; buttons through SPMI; battery/device identity
-  and the native activation path
-
-Known limits there: navigation gestures are incomplete, no Wi-Fi/Bluetooth/
-cellular/audio/camera/sensors/GPS/SEP, no GPU, few apps, ~4 minute boot, and
-code signing/sandbox/data protection are stubbed. **Do not put personal data
-on it.**
+The GUI stack is CPU-rendered and still under bring-up; this is not a usable
+phone OS. Code signing, sandbox and data protection are stubbed. **Do not put
+personal data on it.**
 
 ## How xnuL boots the kernel
 
@@ -150,12 +122,12 @@ primary log.
 | `tools/mkadt.py` | Generates the Apple Device Tree (MMIO, CPU, display, identity); `--angelica` for the Redmi 9C |
 | `tools/mkpayload.py` | Packs kernel + ADT + boot-args into the xnuL payload |
 | `tools/unpack_bootv2.py` | Android `boot.img` v2 unpacker (headers, DTB, round-trip checks) |
-| `tools/mkiosroot.sh` | Builds the HFS+ iOS root from IPSW images (upstream ios-sweet project) |
-| `tools/sweet-root-tweaks.py` | Bring-up changes to that root (Setup skip, activation, daemons) |
-| `tools/sweet-log-pull.sh`, `sweet-log.py` | Read the persistent kernel log from recovery (upstream ios-sweet project) |
-| `tools/sweet-crash.py` | Symbolicate console crash reports |
+| `tools/mkiosroot.sh` | Builds the HFS+ iOS root from IPSW images |
+| `tools/angelica-root-tweaks.py` | Bring-up changes to that root (Setup skip, activation, daemons) |
+| `tools/angelica-log-pull.sh`, `angelica-log.py` | Read the persistent kernel log from recovery |
+| `tools/angelica-crash.py` | Symbolicate console crash reports |
 | `tools/xnu-cc.py` | Local single-file compile check from a CI log |
-| `tools/qemu-sweet.py` | QEMU test boots (upstream sweet configuration) |
+| `tools/qemu-angelica.py` | QEMU virt test boots |
 | `tools/adt.py`, `remotezip.py`, `sparsediff.py` | Helpers |
 | `NOTES.md` | Detailed engineering log: every boot, crash, decision and hardware fact |
 
@@ -167,10 +139,10 @@ calibration data, or Apple's copyrighted files.
 
 | # | What |
 | --- | --- |
-| 0001–0009 | Toolchain compatibility, SWEET machine config, non-PAC arm64, stubs for Apple-internal pieces |
+| 0001–0009 | Toolchain compatibility, ANGELICA machine config, non-PAC arm64, stubs for Apple-internal pieces |
 | 0010–0018 | Early framebuffer console, physmap fix, PRNG, device-tree platform expert, timer PPI, boot CPU |
 | 0019–0027 | libpthread provider, BearSSL AES, RAM-disk root, mockfs, SHA-256, minimal AMFI, HFS+ |
-| 0028–0034 | UFS host driver and root device, read/write root, DMA above 4 GiB (upstream sweet project) |
+| 0028–0034 | UFS host driver and root device, read/write root, DMA above 4 GiB |
 | 0035–0045 | Entitlements, bindfs, AppleKeyStore stub, IOWatchdog, crash reports |
 | 0046 | IOSurface + IOMobileFramebuffer (`AppleCLCD`) services |
 | 0047–0057 | Diagnostics, sandbox permissiveness, HFS fixes, throttled panel copy |
@@ -183,10 +155,11 @@ calibration data, or Apple's copyrighted files.
 | 0087 | Classic non-large-memory layout for 4K (TTBR1 roots at L1, `T1SZ=25`) |
 | 0088 | Build ANGELICA with `-mcpu=cortex-a53+crypto` (no ARMv8.1 LSE atomics) |
 | 0089 | PFZ commpage trylock: `ldaxr`/`stxr` loop instead of LSE `casa` on non-LSE CPUs |
+| 0090 | Full ANGELICA rebrand of the final tree (SWEET paths/identifiers removed) |
 
 ## Warnings
 
-- Experimental. Expect hangs, panics and data loss; the upstream ios-sweet build
+- Experimental. Expect hangs, panics and data loss; the upstream ios-angelica build
   already erases `userdata`, and this port will do the same once an iOS root is flashed.
 - Security is deliberately off: permissive AMFI, stub AppleKeyStore, no data
   protection, no sandbox profiles. Never store personal data.
@@ -198,8 +171,8 @@ calibration data, or Apple's copyrighted files.
 ## Credits
 
 Built on Apple's open-source releases (xnu, IOHIDFamily, libpthread, hfs), the
-[dipa-studio/ios-sweet](https://github.com/dipa-studio/ios-sweet) project (the
-Redmi Note 10 Pro port this tree started from),
+[dipa-studio/ios-angelica](https://github.com/dipa-studio/ios-angelica) project (the
+upstream ios-angelica work this tree started from),
 [BearSSL](https://bearssl.org),
 [blacktop/darwin-xnu-build](https://github.com/blacktop/darwin-xnu-build),
 [ipsw](https://github.com/blacktop/ipsw), Qualcomm/Xiaomi's published Linux

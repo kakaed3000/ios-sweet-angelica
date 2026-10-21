@@ -1,56 +1,40 @@
 #!/usr/bin/env python3
-"""Build the minimal Apple Device Tree that the SWEET xnu needs to boot.
+"""Build the minimal Apple Device Tree that the ANGELICA xnu needs to boot.
 
 Only what the early boot path actually reads (see NOTES.md); every MMIO
-address comes from the sweet live FDT. Usage:  mkadt.py OUT.adt [--dump] [--qemu] [--highmem]
+address comes from the angelica live FDT. Usage:  mkadt.py OUT.adt [--dump] [--qemu]
 """
 import hashlib, os, struct, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adt  # noqa: E402
 
-# Kernel-managed RAM: above every Qualcomm XPU carve-out (see NOTES.md)
-PHYS_BASE = 0xb0000000
-MEM_SIZE = 0x4d000000
-# --highmem (phone only): the whole upper DDR bank. The live FDT memory node is
-# <0x80000000 2G>, <0x1_00000000 0xfcc00000>; every fixed reserved-memory
-# carve-out is in the low bank and the dynamic pools are limited below 4G.
-HIGH_PHYS_BASE = 0x100000000
-HIGH_MEM_SIZE = 0xfcc00000
+# Kernel-managed RAM: above xnuL (base+0x80000), LK and the framebuffer
+# (ends at 0x60000000). 1.5 GB fits inside the smallest 2 GB variant.
+PHYS_BASE = 0x60000000
+MEM_SIZE = 0x60000000
+
 # /arm-io children are relative to this; it must not be 0 (serial_init bails)
 SOC_BASE = 0x01000000
 
-GICD, GICD_SIZE = 0x17a00000, 0x10000
-GICR, GICR_SIZE = 0x17a60000, 0x100000
-FB, FB_SIZE = 0x9c000000, 0x1700000
-SWEET_ECID = 0x5357454554000001  # 'SWEET' + 1, synthetic
-FB_W, FB_H, FB_STRIDE = 1080, 2400, 1080 * 4
-# Internal UFS host (ufshc@1d84000 "ufs_mem"); QEMU virt has none
-UFS, UFS_SIZE = 0x01d84000, 0x3000
-TIMEBASE = 19200000
-VTIMER_INTID = 19
-# QEMU virt (-M virt,gic-version=3 -cpu cortex-a76): GICD/GICR and the generic timer's CNTFRQ
+# ANGELICA (Redmi 9C, MT6765): 8x A53 in one cluster (MPIDR Aff0), GICv3 at
+# 0x0c000000, 13 MHz arch timer, PPI 11 => INTID 27. No UFS; the MSDC0 eMMC
+# driver talks to the host LK leaves initialised. Framebuffer from the LK
+# videolfb tag: 720x1600 @0x5e605000.
+GICD, GICD_SIZE = 0x0c000000, 0x40000
+GICR, GICR_SIZE = 0x0c100000, 0x200000
+FB, FB_SIZE = 0x5e605000, 0x17bb000
+FB_W, FB_H, FB_STRIDE = 720, 1600, 720 * 4
+ECID = 0x414e47454c000001  # 'ANGEL' + 1, synthetic
+TIMEBASE = 13000000
+VTIMER_INTID = 27
+# MSDC0 host left running by LK; bsd/dev/angelica_msdc.c polls it.
+MSDC, MSDC_SIZE = 0x11230000, 0x10000
+# QEMU virt (-M virt,gic-version=3): GICD/GICR and the generic timer's CNTFRQ
 QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
 QEMU_VTIMER_INTID = 27
 
-# ANGELICA (Redmi 9C, MT6765): 8x A53 in one cluster (MPIDR Aff0), GICv3 at
-# 0x0c000000, 13 MHz arch timer, PPI 11 => INTID 27. No UFS (MSDC eMMC driver
-# comes later). Framebuffer from the LK videolfb tag: 720x1600 @0x5e605000.
-ANGELICA_GICD, ANGELICA_GICD_SIZE = 0x0c000000, 0x40000
-ANGELICA_GICR, ANGELICA_GICR_SIZE = 0x0c100000, 0x200000
-ANGELICA_FB, ANGELICA_FB_SIZE = 0x5e605000, 0x17bb000
-ANGELICA_FB_W, ANGELICA_FB_H = 720, 1600
-ANGELICA_TIMEBASE = 13000000
-ANGELICA_VTIMER_INTID = 27
-ANGELICA_ECID = 0x414e47454c000001  # 'ANGEL' + 1, synthetic
-# Kernel-managed RAM: above xnuL (base+0x80000), LK and the framebuffer
-# (ends at 0x60000000). 1.5 GB fits inside the smallest 2 GB variant.
-ANGELICA_PHYS_BASE = 0x60000000
-ANGELICA_MEM_SIZE = 0x60000000
-# eMMC host left running by LK; bsd/dev/sweet_msdc.c polls it.
-ANGELICA_MSDC, ANGELICA_MSDC_SIZE = 0x11230000, 0x10000
-
-BOOT_MANIFEST_HASH = hashlib.sha384(b'sweet boot manifest').digest()
+BOOT_MANIFEST_HASH = hashlib.sha384(b'angelica boot manifest').digest()
 
 # The iOS userland is the iPhone X (iPhone10,3 / D22AP) IPSW. MobileGestalt
 # derives product type, device class, home-button-less UI, artwork etc. from
@@ -85,36 +69,19 @@ def node(name, props=(), children=()):
     return n
 
 
-def build(seed=None, qemu=False, highmem=False, angelica=False):
-    """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py)."""
-    if qemu and angelica:
-        raise SystemExit('--qemu and --angelica are exclusive')
-    if angelica:
-        phys_base, mem_size = ANGELICA_PHYS_BASE, ANGELICA_MEM_SIZE
-    else:
-        phys_base, mem_size = (HIGH_PHYS_BASE, HIGH_MEM_SIZE) if highmem else (PHYS_BASE, MEM_SIZE)
+def build(seed=None, qemu=False):
+    """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-angelica.py)."""
+    phys_base, mem_size = PHYS_BASE, MEM_SIZE
     if qemu:
         gicd, gicr, gicd_size, gicr_size, timebase = QEMU_GICD, QEMU_GICR, 0x10000, 0x100000, QEMU_TIMEBASE
         vtimer_intid = QEMU_VTIMER_INTID
-    elif angelica:
-        gicd, gicr = ANGELICA_GICD, ANGELICA_GICR
-        gicd_size, gicr_size = ANGELICA_GICD_SIZE, ANGELICA_GICR_SIZE
-        timebase = ANGELICA_TIMEBASE
-        vtimer_intid = ANGELICA_VTIMER_INTID
     else:
         gicd, gicr, gicd_size, gicr_size, timebase = GICD, GICR, GICD_SIZE, GICR_SIZE, TIMEBASE
         vtimer_intid = VTIMER_INTID
-    if angelica:
-        fb, fb_size = ANGELICA_FB, ANGELICA_FB_SIZE
-        fb_w, fb_h = ANGELICA_FB_W, ANGELICA_FB_H
-        fb_stride = fb_w * 4
-        display_scale, canvas_w, canvas_h = 2, 720, 1600  # 360x800 pt @2x
-        ecid = ANGELICA_ECID
-    else:
-        fb, fb_size = FB, FB_SIZE
-        fb_w, fb_h, fb_stride = FB_W, FB_H, FB_STRIDE
-        display_scale, canvas_w, canvas_h = 3, 1125, 2436
-        ecid = SWEET_ECID
+    fb, fb_size = FB, FB_SIZE
+    fb_w, fb_h, fb_stride = FB_W, FB_H, FB_STRIDE
+    display_scale, canvas_w, canvas_h = 2, 720, 1600  # 360x800 pt @2x
+    ecid = ECID
     seed = seed if seed is not None else os.urandom(64)
     phandle = iter(range(1, 1000))
     ph = lambda: ('AAPL,phandle', u32(next(phandle)))
@@ -162,15 +129,15 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
         # with CSR_ALLOW_UNRESTRICTED_FS (vm_unix.c shared region checks).
         node('asmb', [ph(), ('lp-sip0', u64(0x6f)), ('lp-sip1', u32(1))])])
 
-    # One homogeneous cluster: sweet = 4xA55 + 4xA55/A76 mixed SoC, angelica =
-    # 8x A53 with MPIDR Aff1:Aff0 = 0x0:c (Aff0 only, so reg = core).
+    # One homogeneous cluster: 8x A53 with MPIDR Aff1:Aff0 = 0x0:c
+    # (Aff0 only, so reg = core).
     cpu_nodes = []
     for core in range(1 if qemu else 8):
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
             ('device_type', cstr('cpu')),
-            ('compatible', cstr('arm,cortex-a53' if angelica else 'qcom,kryo470') + cstr('ARM,v8')),
-            ('reg', u32(core if angelica else core << 8)),  # actual MPIDR Aff1:Aff0, NOT logical ID
+            ('compatible', cstr('arm,cortex-a53') + cstr('ARM,v8')),
+            ('reg', u32(core)),  # actual MPIDR Aff1:Aff0, NOT logical ID
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
             ('cluster-id', u32(0)),  # descriptive; see ml_parse_cpu_topology
             ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
@@ -180,7 +147,7 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
             ('l3-cache-id', u32(0)),     # shared L3
             ('state', cstr('running' if core == 0 else 'stopped')),
             ('timebase-frequency', u32(timebase)),
-            ('clock-frequency', u32(2301000000 if angelica else (2304000000 if core >= 6 else 1804800000))),
+            ('clock-frequency', u32(2301000000)),
             ('bus-frequency', u32(100000000)),
             ('memory-frequency', u32(1866000000)),
             ('peripheral-frequency', u32(timebase)),
@@ -198,8 +165,8 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
     ])
     arm_io = node('arm-io', [
         ph(),
-        ('device_type', cstr('sweet-io')),
-        ('compatible', cstr('sweet-io') + cstr('arm-io')),
+        ('device_type', cstr('angelica-io')),
+        ('compatible', cstr('angelica-io') + cstr('arm-io')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
         ('ranges', u64(0, SOC_BASE, 0x100000000 - SOC_BASE)),
@@ -210,17 +177,17 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
         node('wdt', [ph(), ('no-pmu', u32(1))]),
         # Main display: IOMobileFramebuffer.framework counts /arm-io children
         # with this device_type and reads the canvas size from the node
-        # (the presented iPhone X size, see SweetFramebuffer.cpp);
+        # (the presented iPhone X size, see AngelicaFramebuffer.cpp);
         # the kernel's AppleCLCD matches the compatible string.
         node('disp0', [
             ph(),
             ('device_type', cstr('display-subsystem')),
-            ('compatible', cstr('sweet,display')),
+            ('compatible', cstr('angelica,display')),
             ('canvas-width', u32(canvas_w)),
             ('canvas-height', u32(canvas_h)),
         ])])
 
-    fbcon = node('sweet-fbcon', [
+    fbcon = node('angelica-fbcon', [
         ph(),
         ('reg', u64(fb, fb_size)),
         ('width', u32(fb_w)),
@@ -228,18 +195,11 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
         ('stride', u32(fb_stride)),
     ])
 
-    # bsd/dev/sweet_ufs.c: the UFS host ABL leaves running (absolute physical reg).
-    ufs = node('sweet-ufs', [
-        ph(),
-        ('compatible', cstr('qcom,ufshc')),
-        ('reg', u64(UFS, UFS_SIZE)),
-    ])
-
-    # bsd/dev/sweet_msdc.c: the MSDC0 host LK leaves initialised on the eMMC.
-    msdc = node('sweet-msdc', [
+    # bsd/dev/angelica_msdc.c: the MSDC0 host LK leaves initialised on the eMMC.
+    msdc = node('angelica-msdc', [
         ph(),
         ('compatible', cstr('mediatek,mt6765-msdc')),
-        ('reg', u64(ANGELICA_MSDC, ANGELICA_MSDC_SIZE)),
+        ('reg', u64(MSDC, MSDC_SIZE)),
     ])
 
     # pmap_compute_max_asids requires the node even when no overrides are set.
@@ -262,14 +222,9 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
 
     # Identity of the iPhone X whose userland runs here: compatible[0] is
     # hw.model/hw.target (D22AP), model is hw.machine/hw.product
-    # (iPhone10,3). 'xiaomi,sweet' stays for SweetPlatformExpert matching
+    # (iPhone10,3). 'xiaomi,angelica' stays for AngelicaPlatformExpert matching
     # (0016 IONameMatch); angelica keeps it alongside its own compatible.
-    root_compat = ['D22AP', 'iPhone10,3']
-    if angelica:
-        root_compat += ['xiaomi,angelica', 'xiaomi,sweet', 'mediatek,mt6765']
-    else:
-        root_compat += ['xiaomi,sweet', 'qcom,sm7150']
-    root_compat.append('AppleARM')
+    root_compat = ['D22AP', 'iPhone10,3', 'xiaomi,angelica', 'mediatek,mt6765', 'AppleARM']
     return node('device-tree', [
         ph(),
         ('compatible', b''.join(cstr(s) for s in root_compat)),
@@ -279,12 +234,11 @@ def build(seed=None, qemu=False, highmem=False, angelica=False):
         ('manufacturer', cstr('Apple Inc.')),
         ('#address-cells', u32(2)),
         ('#size-cells', u32(2)),
-    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + ([msdc] if angelica else ([] if qemu else [ufs])))
+    ], [chosen, defaults, cpus, arm_io, fbcon, buttons] + product + [msdc])
 
 
 if __name__ == '__main__':
-    root = build(qemu='--qemu' in sys.argv, highmem='--highmem' in sys.argv,
-                 angelica='--angelica' in sys.argv)
+    root = build(qemu='--qemu' in sys.argv)
     blob = adt.serialize(root)
     open(sys.argv[1], 'wb').write(blob)
     if '--dump' in sys.argv:

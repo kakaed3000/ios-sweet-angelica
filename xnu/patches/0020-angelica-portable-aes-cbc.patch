@@ -76,7 +76,7 @@ diff --git a/libkern/conf/Makefile.template b/libkern/conf/Makefile.template
  SFLAGS+= -include meta_features.h
 +
 +ifneq ($(filter SWEET ANGELICA,$(CURRENT_MACHINE_CONFIG)),)
-+SWEET_AES_ROOT = $(SRCROOT)/libkern/crypto/sweet_bearssl
++SWEET_AES_ROOT = $(SRCROOT)/libkern/crypto/angelica_bearssl
 +SWEET_AES_INC = -I$(SWEET_AES_ROOT)/inc -I$(SWEET_AES_ROOT)/src
 +sweet_aes.o_INCFLAGS = $(SWEET_AES_INC)
 +sweet_aes_ct.o_INCFLAGS = $(SWEET_AES_INC)
@@ -111,7 +111,7 @@ new file mode 100644
 +#include <libkern/crypto/aes.h>
 +#include <corecrypto/ccmode.h>
 +#include <corecrypto/cc_error.h>
-+#include "sweet_bearssl/inc/bearssl_block.h"
++#include "angelica_bearssl/inc/bearssl_block.h"
 +
 +_Static_assert(sizeof(br_aes_ct_cbcenc_keys) <= sizeof(aes_encrypt_ctx),
 +    "BearSSL encryption context does not fit the XNU AES ABI");
@@ -218,7 +218,7 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/symcipher/aes_ct.c"
++#include "angelica_bearssl/src/symcipher/aes_ct.c"
 +#endif
 diff --git a/libkern/crypto/sweet_aes_ct_enc.c b/libkern/crypto/sweet_aes_ct_enc.c
 new file mode 100644
@@ -227,7 +227,7 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/symcipher/aes_ct_enc.c"
++#include "angelica_bearssl/src/symcipher/aes_ct_enc.c"
 +#endif
 diff --git a/libkern/crypto/sweet_aes_ct_dec.c b/libkern/crypto/sweet_aes_ct_dec.c
 new file mode 100644
@@ -236,7 +236,7 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/symcipher/aes_ct_dec.c"
++#include "angelica_bearssl/src/symcipher/aes_ct_dec.c"
 +#endif
 diff --git a/libkern/crypto/sweet_aes_ct_cbcenc.c b/libkern/crypto/sweet_aes_ct_cbcenc.c
 new file mode 100644
@@ -245,7 +245,7 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/symcipher/aes_ct_cbcenc.c"
++#include "angelica_bearssl/src/symcipher/aes_ct_cbcenc.c"
 +#endif
 diff --git a/libkern/crypto/sweet_aes_ct_cbcdec.c b/libkern/crypto/sweet_aes_ct_cbcdec.c
 new file mode 100644
@@ -254,5 +254,5 @@ new file mode 100644
 @@ -0,0 +1,4 @@
 +/* BearSSL sources are fetched at an immutable commit by 0020-stage-bearssl.sh. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
-+#include "sweet_bearssl/src/symcipher/aes_ct_cbcdec.c"
++#include "angelica_bearssl/src/symcipher/aes_ct_cbcdec.c"
 +#endif

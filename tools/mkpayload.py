@@ -9,7 +9,7 @@ kernelcaches itself, so the chains are walked here and every pointer is
 rewritten to its unslid target. xnuL then only copies flat segments.
 
 Payload layout (little endian, all offsets from payload start):
-  0x000  char  magic[8] = "SWEETXNU"
+  0x000  char  magic[8] = "ANGELICAXNU"
   0x008  u32   version = 1, nsegs
   0x010  u64   virt_base      kernel VA that maps to phys_base
   0x018  u64   entry_va       LC_UNIXTHREAD pc
@@ -154,7 +154,7 @@ def build(kernel_path, adt_path, cmdline, ramdisk_path=None):
     kernel_end = (kernel_end + PAGE - 1) & ~(PAGE - 1)
 
     adt_blob = open(adt_path, 'rb').read()
-    # The ADT decides where the kernel's RAM is (mkadt.py --highmem).
+    # The ADT decides where the kernel's RAM is.
     PHYS_BASE, MEM_SIZE = adt_dram(adt_blob)
     pieces = [(s['vmaddr'], s['vmsize'], buf[s['fileoff']:s['fileoff'] + s['filesize']]) for s in segs]
     ramdisk = None
@@ -180,7 +180,7 @@ def build(kernel_path, adt_path, cmdline, ramdisk_path=None):
     out += adt_blob
     out += b'\0' * (-len(out) & 0xf)
 
-    struct.pack_into('<8sII', out, 0, b'SWEETXNU', 1, len(pieces))
+    struct.pack_into('<8sII', out, 0, b'ANGELICAXNU', 1, len(pieces))
     struct.pack_into('<7Q', out, 0x10, virt_base, m['entry'], adt_off, len(adt_blob), kernel_end,
                      PHYS_BASE, MEM_SIZE)
     cl = cmdline.encode()[:BOOT_LINE_LENGTH - 1]

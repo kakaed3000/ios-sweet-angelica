@@ -21,7 +21,7 @@ diff --git a/bsd/conf/Makefile.template b/bsd/conf/Makefile.template
 +
 +# This provider is built into SWEET; other boards use their normal kext.
 +ifneq ($(filter SWEET ANGELICA,$(CURRENT_MACHINE_CONFIG)),)
-+SWEET_PTHREAD_ROOT = $(SRCROOT)/bsd/pthread/sweet_libpthread
++SWEET_PTHREAD_ROOT = $(SRCROOT)/bsd/pthread/angelica_libpthread
 +SWEET_PTHREAD_INC = -I$(SWEET_PTHREAD_ROOT) -I$(SWEET_PTHREAD_ROOT)/private -I$(SWEET_PTHREAD_ROOT)/include
 +sweet_pthread_init.o_INCFLAGS = $(SWEET_PTHREAD_INC)
 +sweet_pthread_support.o_INCFLAGS = $(SWEET_PTHREAD_INC)
@@ -84,7 +84,7 @@ new file mode 100644
 +/* Built-in provider: Apple libpthread-514.100.2, paired with xnu-8796.141.3. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
 +#include "sweet_pthread_compat.h"
-+#include "sweet_libpthread/kern/kern_init.c"
++#include "angelica_libpthread/kern/kern_init.c"
 +
 +/* Keep the provider's full layout within the kernel's reserved storage. */
 +_Static_assert(sizeof(struct ksyn_waitq_element) == 56,
@@ -115,7 +115,7 @@ new file mode 100644
 +/* Built-in provider: Apple libpthread-514.100.2, paired with xnu-8796.141.3. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
 +#include "sweet_pthread_compat.h"
-+#include "sweet_libpthread/kern/kern_support.c"
++#include "angelica_libpthread/kern/kern_support.c"
 +#endif /* ARM64_BOARD_CONFIG_SWEET */
 diff --git a/bsd/pthread/sweet_pthread_synch.c b/bsd/pthread/sweet_pthread_synch.c
 new file mode 100644
@@ -125,5 +125,5 @@ new file mode 100644
 +/* Built-in provider: Apple libpthread-514.100.2, paired with xnu-8796.141.3. */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
 +#include "sweet_pthread_compat.h"
-+#include "sweet_libpthread/kern/kern_synch.c"
++#include "angelica_libpthread/kern/kern_synch.c"
 +#endif /* ARM64_BOARD_CONFIG_SWEET */
