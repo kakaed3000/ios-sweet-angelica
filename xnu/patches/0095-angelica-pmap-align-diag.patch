@@ -1,0 +1,35 @@
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -619,8 +619,8 @@
+ 	__unreachable_ok_push
+ 	if (TEST_PAGE_RATIO_4) {
+ 		if (((uintptr_t)ptep) & 0x1f) {
+-			panic("%s: PTE write is unaligned, ptep=%p, pte=%p",
+-			    __func__, ptep, (void*)pte);
++			panic("%s: PTE write is unaligned, ptep=%p, pte=%p, caller=%p",
++			    __func__, ptep, (void*)pte, __builtin_return_address(0));
+ 		}
+ 
+ 		if ((pte & ~ARM_PTE_COMPRESSED_MASK) == ARM_PTE_EMPTY) {
+@@ -1836,6 +1836,10 @@
+ 		}
+ 
+ 		assert(!ARM_PTE_IS_COMPRESSED(*ptep, ptep));
++		if (((uintptr_t)ptep) & 0x1f) {
++			panic("%s: unaligned PTE, virt=%p vaddr=%p ptep=%p",
++			    __func__, (void*)virt, (void*)vaddr, ptep);
++		}
+ 		write_pte_strong(ptep, tmplate);
+ 
+ 		pte_increment_pa(tmplate);
+@@ -5596,6 +5600,10 @@
+ 		 * We actually need to update 4 ptes here which can't easily be done atomically.
+ 		 * As a result we require the exclusive pmap lock.
+ 		 */
++		if (((uintptr_t)pte_p) & 0x1f) {
++			panic("%s: unaligned PTE, v=%p pte_p=%p new_pte=%p",
++			    __func__, (void*)v, pte_p, (void*)new_pte);
++		}
+ 		pmap_assert_locked(pmap, PMAP_LOCK_EXCLUSIVE);
+ 		*old_pte = *pte_p;
+ 		if (*old_pte == new_pte) {
