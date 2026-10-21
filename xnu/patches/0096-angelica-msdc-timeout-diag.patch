@@ -1,0 +1,82 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -55,6 +55,8 @@
+ #define MSDC_FIFOCS_RXCNT   0xffu
+ #define MSDC_FIFOCS_CLR     (1u << 31)
+ #define MSDC_CFG_PIO        (1u << 3)
++#define MSDC_CFG_CKPDN      (1u << 1)
++#define MSDC_CFG_CKSTB      (1u << 7)
+ #define MSDC_BLOCK          512u                /* CMD17 block length */
+ #define MSDC_FIFO_WORDS     (MSDC_BLOCK / 4)
+ #define CMD_TIMEOUT_NS      (2ull * NSEC_PER_SEC)
+@@ -110,6 +112,8 @@
+ 
+ 	while (msdc_rd(SDC_STS) & SDC_STS_SDCBUSY) {
+ 		if (mach_absolute_time() > deadline) {
++			printf("ANGELICA MSDC: CMD%u busy timeout sts=0x%x cfg=0x%x\n",
++			    opcode, msdc_rd(SDC_STS), msdc_rd(MSDC_CFG));
+ 			return ETIMEDOUT;
+ 		}
+ 		delay(1);
+@@ -125,12 +129,15 @@
+ 			break;
+ 		}
+ 		if (mach_absolute_time() > deadline) {
++			printf("ANGELICA MSDC: CMD%u irq timeout int=0x%x sts=0x%x cfg=0x%x\n",
++			    opcode, msdc_rd(MSDC_INT), msdc_rd(SDC_STS), msdc_rd(MSDC_CFG));
+ 			return ETIMEDOUT;
+ 		}
+ 		delay(1);
+ 	}
+ 	msdc_wr(MSDC_INT, ints);
+ 	if (ints & (MSDC_INT_CMDTMO | MSDC_INT_RSPCRCERR)) {
++		printf("ANGELICA MSDC: CMD%u error int=0x%x\n", opcode, ints);
+ 		return EIO;
+ 	}
+ 	if (resp) {
+@@ -165,6 +172,8 @@
+ 			msdc_wr(MSDC_INT, ints);
+ 		}
+ 		if (ints & (MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)) {
++			printf("ANGELICA MSDC: CMD17 %llu data error int=0x%x left=%u\n",
++			    (unsigned long long)lba, ints, left);
+ 			return EIO;
+ 		}
+ 		if (ints & MSDC_INT_XFER_COMPL) {
+@@ -182,6 +191,9 @@
+ 			continue;
+ 		}
+ 		if (mach_absolute_time() > deadline) {
++			printf("ANGELICA MSDC: CMD17 %llu data timeout int=0x%x left=%u fifo=0x%x\n",
++			    (unsigned long long)lba, msdc_rd(MSDC_INT), left,
++			    msdc_rd(MSDC_FIFOCS));
+ 			return ETIMEDOUT;
+ 		}
+ 		delay(1);
+@@ -433,6 +445,7 @@
+ 	uintptr_t const *reg = NULL;
+ 	unsigned int size = 0;
+ 	char want[64] = "userdata";
++	uint32_t cfg;
+ 	int error;
+ 
+ 	if (SecureDTLookupEntry(NULL, "/angelica-msdc", &node) != kSuccess ||
+@@ -448,11 +461,15 @@
+ 
+ 	lck_mtx_lock(&angelica_msdc_lock);
+ 	msdc_wr(MSDC_INTEN, 0);                 /* polled operation */
+-	msdc_wr(MSDC_CFG, msdc_rd(MSDC_CFG) | MSDC_CFG_PIO);
++	cfg = msdc_rd(MSDC_CFG);
++	msdc_wr(MSDC_CFG, (cfg | MSDC_CFG_PIO) & ~MSDC_CFG_CKPDN);
++	for (uint32_t i = 0; !(msdc_rd(MSDC_CFG) & MSDC_CFG_CKSTB) && i < 100; i++) {
++		delay(1);
++	}
+ 	msdc_wr(MSDC_FIFOCS, MSDC_FIFOCS_CLR);
+ 	msdc_wr(MSDC_INT, MSDC_INT_CMDMASK | MSDC_INT_DATAMASK);
+-	printf("ANGELICA MSDC: regs %p cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
+-	    (void *)sm.regs, msdc_rd(MSDC_CFG), msdc_rd(SDC_STS),
++	printf("ANGELICA MSDC: regs %p cfg=0x%x->0x%x sts=0x%x fifo=0x%x int=0x%x\n",
++	    (void *)sm.regs, cfg, msdc_rd(MSDC_CFG), msdc_rd(SDC_STS),
+ 	    msdc_rd(MSDC_FIFOCS), msdc_rd(MSDC_INT));
+ 	error = msdc_find_partition(want);
+ 	lck_mtx_unlock(&angelica_msdc_lock);

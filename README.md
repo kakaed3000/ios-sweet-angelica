@@ -163,6 +163,7 @@ calibration data, or Apple's copyrighted files.
 | 0093 | Use the 24 GB zone map and the iOS compressor cap on ANGELICA instead of the macOS 128 GB/16x sizes |
 | 0094 | Switch the ANGELICA MSDC host to polled PIO, clear the FIFO and print controller state on failure |
 | 0095 | Report the caller and virtual address when the 16K/4K PTE alignment guard fires |
+| 0096 | Power up the MSDC clock and report the exact CMD17 timeout phase |
 
 ## Warnings
 
