@@ -179,6 +179,7 @@ calibration data, or Apple's copyrighted files.
 | 0109 | Add kprintf at ANGELICA MSDC rootdev entry |
 | 0110 | Use kprintf for all ANGELICA MSDC messages |
 | 0111 | Use kprintf when reporting the ANGELICA root device |
+| 0112 | Fix ANGELICA MSDC CMD17 data loop timeout path |
 
 ## Warnings
 

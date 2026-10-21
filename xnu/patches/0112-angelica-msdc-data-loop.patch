@@ -1,0 +1,28 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -172,6 +172,7 @@
+ 	uint32_t resp = 0;
+ 	uint32_t *out = (uint32_t *)sm.sector;
+ 	uint32_t left = MSDC_FIFO_WORDS;
++	uint32_t spin = 0;
+ 	bool xfer_done = false;
+ 	int error;
+ 
+@@ -207,13 +208,12 @@
+ 				*out++ = msdc_rd(MSDC_RXDATA);
+ 			}
+ 			left -= rx;
+-			continue;
+ 		}
+-		if (mach_absolute_time() > deadline) {
+-			sm.last_stage = "data-timeout";
+-			kprintf("ANGELICA MSDC: CMD17 %llu data timeout int=0x%x left=%u fifo=0x%x\n",
++		if (mach_absolute_time() > deadline || ++spin > 1000000u) {
++			sm.last_stage = (left == 0) ? "data-complete" : "data-timeout";
++			kprintf("ANGELICA MSDC: CMD17 %llu data timeout int=0x%x left=%u fifo=0x%x spin=%u\n",
+ 			    (unsigned long long)lba, msdc_rd(MSDC_INT), left,
+-			    msdc_rd(MSDC_FIFOCS));
++			    msdc_rd(MSDC_FIFOCS), spin);
+ 			return ETIMEDOUT;
+ 		}
+ 		delay(1);
