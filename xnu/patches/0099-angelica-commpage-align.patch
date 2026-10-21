@@ -1,0 +1,12 @@
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -10916,6 +10916,9 @@
+ 		// comm page, but with new leaf index we've just generated.
+ 		commpage_text_va = (_COMM_PAGE64_BASE_ADDRESS & ~pt_attr_leaf_index_mask(pt_attr));
+ 		commpage_text_va |= (text_leaf_index << pt_attr_leaf_shift(pt_attr));
++		// The commpage text is a full VM page and is written with write_pte_fast(),
++		// which requires a PAGE_SIZE-aligned leaf even when the pmap uses 4K PTEs.
++		commpage_text_va &= ~(vm_map_address_t)(PAGE_SIZE - 1);
+ 	} while ((commpage_text_va == _COMM_PAGE64_BASE_ADDRESS) || (commpage_text_va == _COMM_PAGE64_RO_ADDRESS)); // Try again if we collide (should be unlikely)
+ 
+ 	// Assert that this is empty
