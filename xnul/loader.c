@@ -96,6 +96,24 @@ const char *loader_boot(uintptr_t dtb)
 	con_hex("VIRT", p->virt_base);
 	con_hex("ENTRY", p->entry_va);
 
+	/* Cross-check the payload's memory budget against what LK actually describes. */
+	uint64_t mbase, msize;
+	if (fdt_memory(dtb, &mbase, &msize)) {
+		con_hex2("FDTMEM", "base=", mbase, "size=", msize);
+		if (mbase + msize < mbase || p->phys_base < mbase ||
+		    p->phys_base - mbase > msize ||
+		    p->mem_size > msize - (p->phys_base - mbase)) {
+			con_str("FDTMEM", "payload RAM is OUTSIDE live DRAM");
+		} else if (rd_start < mbase || rd_end > mbase + msize ||
+		    rd_end < rd_start) {
+			con_str("FDTMEM", "initrd OUTSIDE live DRAM");
+		} else {
+			con_str("FDTMEM", "payload RAM is inside live DRAM");
+		}
+	} else {
+		con_str("FDTMEM", "no /memory reg in live DTB");
+	}
+
 	/* The payload must not overlap where the kernel goes. */
 	if (rd_end > p->phys_base && rd_start < p->phys_base + p->mem_size)
 		return "ramdisk overlaps kernel memory";
@@ -114,6 +132,8 @@ const char *loader_boot(uintptr_t dtb)
 	copy64(adt_pa, rd_start + p->adt_off, p->adt_size);
 	uintptr_t ba_pa = (adt_pa + p->adt_size + PAGE_16K - 1) & ~(PAGE_16K - 1);
 	uintptr_t top = ba_pa + PAGE_16K;
+	if (top < ba_pa || top > p->phys_base + p->mem_size)
+		return "boot args outside payload memory";
 
 	zero64(ba_pa, PAGE_16K);
 	volatile struct boot_args *ba = (volatile struct boot_args *)ba_pa;
