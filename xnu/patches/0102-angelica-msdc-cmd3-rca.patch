@@ -1,0 +1,20 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -304,14 +304,12 @@
+ 	}
+ 
+ 	sm.last_stage = "card-cmd3";
+-	error = msdc_cmd(3, 0, 1, 0, &resp);
++	rca = 0x00010000u;
++	error = msdc_cmd(3, rca, 1, 0, &resp);
+ 	if (error) {
+ 		return error;
+ 	}
+-	rca = resp & 0xffff0000u;
+-	if (rca == 0) {
+-		return EIO;
+-	}
++	printf("ANGELICA MSDC: CMD3 resp=0x%x\n", resp);
+ 
+ 	sm.last_stage = "card-cmd7";
+ 	error = msdc_cmd(7, rca, 1, 0, &resp);

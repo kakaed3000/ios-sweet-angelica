@@ -169,6 +169,7 @@ calibration data, or Apple's copyrighted files.
 | 0099 | Align the randomized ARM commpage text mapping to the VM page size |
 | 0100 | Set the ANGELICA MSDC data timeout and panic with the failing phase |
 | 0101 | Initialize the ANGELICA eMMC card in SDR/1-bit instead of inheriting LK state |
+| 0102 | Pass the eMMC RCA in CMD3 and verify the response |
 
 ## Warnings
 
