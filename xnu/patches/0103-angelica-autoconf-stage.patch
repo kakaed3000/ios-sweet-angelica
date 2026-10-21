@@ -1,0 +1,44 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1107,6 +1107,7 @@
+ {
+ 	kprintf("bsd_autoconf: calling kminit\n");
+ 	kminit();
++	kprintf("bsd_autoconf: kminit returned\n");
+ 
+ 	/*
+ 	 * Early startup for bsd pseudodevices.
+@@ -1114,12 +1115,17 @@
+ 	{
+ 		struct pseudo_init *pi;
+ 
++		kprintf("bsd_autoconf: pseudo_inits begin\n");
+ 		for (pi = pseudo_inits; pi->ps_func; pi++) {
+ 			(*pi->ps_func)(pi->ps_count);
+ 		}
++		kprintf("bsd_autoconf: pseudo_inits done\n");
+ 	}
+ 
+-	return IOKitBSDInit();
++	kprintf("bsd_autoconf: calling IOKitBSDInit\n");
++	kern_return_t kr = IOKitBSDInit();
++	kprintf("bsd_autoconf: IOKitBSDInit returned %d\n", kr);
++	return kr;
+ }
+ 
+ 
+--- a/bsd/dev/arm/km.c
++++ b/bsd/dev/arm/km.c
+@@ -57,9 +57,12 @@
+ void
+ kminit(void)
+ {
++	kprintf("kminit: ttymalloc begin\n");
+ 	km_tty[0] = ttymalloc();
++	kprintf("kminit: ttymalloc done\n");
+ 	km_tty[0]->t_dev = makedev(12, 0);
+ 	initialized = 1;
++	kprintf("kminit: done\n");
+ }
+ 
+ /*
