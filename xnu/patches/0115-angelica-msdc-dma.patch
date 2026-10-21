@@ -1,0 +1,173 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -28,6 +28,8 @@
+ 
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++extern pmap_paddr_t kvtophys(vm_offset_t va);
++extern void flush_dcache(vm_offset_t addr, unsigned count, int phys);
+ 
+ /* MediaTek MSDC register map (drivers/mmc/host/mediatek/ComboA/msdc_reg.h). */
+ #define MSDC_CFG        0x00
+@@ -70,9 +72,18 @@
+ #define MSDC_CFG_CKMOD      (3u << 20)
+ #define MSDC_CFG_CKMOD_HS400 (1u << 22)
+ #define MSDC_CFG_SCLK_STOP_DDR (1u << 25)
++#define MSDC_DMA_SA_HIGH    0x8c
++#define MSDC_DMA_SA         0x90
+ #define MSDC_DMA_CTRL       0x98
+-#define MSDC_DMA_CTRL_STOP  (1u << 1)
+ #define MSDC_DMA_CFG        0x9c
++#define MSDC_DMA_LEN        0xa8
++
++#define MSDC_DMA_CTRL_START (1u << 0)
++#define MSDC_DMA_CTRL_STOP  (1u << 1)
++#define MSDC_DMA_CTRL_LASTBUF (1u << 10)
++#define MSDC_DMA_BRUST_64B  (6u << 12)
++#define MSDC_DMA_CFG_STS    (1u << 0)
++#define MSDC_DMA_SA_HIGH_MASK 0xfu
+ #define MSDC_BLOCK          512u                /* CMD17 block length */
+ #define MSDC_FIFO_WORDS     (MSDC_BLOCK / 4)
+ #define CMD_TIMEOUT_NS      (2ull * NSEC_PER_SEC)
+@@ -85,7 +96,7 @@
+ 	vm_offset_t regs;
+ 	uint64_t first_block, nblocks;          /* partition, in 512-byte sectors */
+ 	uint32_t secsize;                       /* logical sector size for the BSD layer */
+-	uint8_t sector[MSDC_BLOCK];             /* one-sector bounce buffer */
++	uint8_t sector[MSDC_BLOCK] __attribute__((aligned(64))); /* DMA bounce buffer */
+ 	const char *last_stage;
+ 	int bmajor, cmajor;
+ 	dev_t bdev;
+@@ -166,66 +177,98 @@
+ 	return 0;
+ }
+ 
++static void
++msdc_dma_stop(void)
++{
++	msdc_wr(MSDC_DMA_CTRL, MSDC_DMA_CTRL_STOP);
++	for (uint32_t i = 0; (msdc_rd(MSDC_DMA_CFG) & MSDC_DMA_CFG_STS) && i < 1000; i++) {
++		delay(1);
++	}
++}
++
+ /* CMD17 of one 512-byte block into sm.sector; the caller holds the lock. */
+ static int
+ msdc_read_sector(uint64_t lba)
+ {
+ 	uint64_t deadline = msdc_deadline(CMD_TIMEOUT_NS);
++	pmap_paddr_t paddr;
+ 	uint32_t resp = 0;
+-	uint32_t *out = (uint32_t *)sm.sector;
+-	uint32_t left = MSDC_FIFO_WORDS;
+-	uint32_t spin = 0;
+-	bool xfer_done = false;
++	uint32_t cfg, ctrl, ints;
+ 	int error;
+ 
+-	msdc_wr(SDC_BLK_NUM, 1);
++	msdc_dma_stop();
++	msdc_wr(MSDC_DMA_CFG, 0);
+ 	msdc_wr(MSDC_FIFOCS, MSDC_FIFOCS_CLR);
+ 	for (uint32_t i = 0; (msdc_rd(MSDC_FIFOCS) & MSDC_FIFOCS_CLR) && i < 100; i++) {
+ 		delay(1);
+ 	}
++
++	/* PIO is documented as SDIO-only; card block transfers must use DMA. */
++	cfg = msdc_rd(MSDC_CFG);
++	msdc_wr(MSDC_CFG, cfg & ~MSDC_CFG_PIO);
++	msdc_wr(SDC_BLK_NUM, 1);
++
+ 	error = msdc_cmd(17, (uint32_t)lba, 1, 1, &resp);
+ 	if (error) {
+-		return error;
++		goto out;
+ 	}
+ 	if (resp & (R1_OUT_OF_RANGE | R1_ERROR)) {
+ 		kprintf("ANGELICA MSDC: CMD17 %llu status 0x%x\n", lba, resp);
+-		return EIO;
++		error = EIO;
++		goto out;
+ 	}
+ 
+-	while (!(xfer_done && left == 0)) {
+-		uint32_t ints = msdc_rd(MSDC_INT) & MSDC_INT_DATAMASK;
++	paddr = kvtophys((vm_offset_t)sm.sector);
++	if (paddr == 0) {
++		kprintf("ANGELICA MSDC: no DMA address for sector buffer\n");
++		error = EIO;
++		goto out;
++	}
++
++	flush_dcache((vm_offset_t)sm.sector, MSDC_BLOCK, FALSE);
++	msdc_wr(MSDC_DMA_SA_HIGH, (uint32_t)((paddr >> 32) & MSDC_DMA_SA_HIGH_MASK));
++	msdc_wr(MSDC_DMA_SA, (uint32_t)paddr);
++	msdc_wr(MSDC_DMA_LEN, MSDC_BLOCK);
++	ctrl = MSDC_DMA_CTRL_LASTBUF | MSDC_DMA_BRUST_64B;
++	msdc_wr(MSDC_DMA_CTRL, ctrl);
++	msdc_wr(MSDC_DMA_CTRL, ctrl | MSDC_DMA_CTRL_START);
++
++	for (;;) {
++		ints = msdc_rd(MSDC_INT) & MSDC_INT_DATAMASK;
+ 		if (ints) {
+ 			msdc_wr(MSDC_INT, ints);
+ 		}
+ 		if (ints & (MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)) {
+-			sm.last_stage = "data";
+-			kprintf("ANGELICA MSDC: CMD17 %llu data error int=0x%x left=%u\n",
+-			    (unsigned long long)lba, ints, left);
+-			return EIO;
+-		}
+-		if (ints & (MSDC_INT_XFER_COMPL | MSDC_INT_DXFER_DONE)) {
+-			xfer_done = true;
+-		}
+-		uint32_t rx = msdc_rd(MSDC_FIFOCS) & MSDC_FIFOCS_RXCNT;
+-		if (rx) {
+-			if (rx > left) {
+-				rx = left;
+-			}
+-			for (uint32_t i = 0; i < rx; i++) {
+-				*out++ = msdc_rd(MSDC_RXDATA);
+-			}
+-			left -= rx;
+-		}
+-		if (mach_absolute_time() > deadline || ++spin > 1000000u) {
+-			sm.last_stage = "data-timeout";
+-			kprintf("ANGELICA MSDC: CMD17 %llu data timeout int=0x%x left=%u fifo=0x%x spin=%u\n",
+-			    (unsigned long long)lba, msdc_rd(MSDC_INT), left,
+-			    msdc_rd(MSDC_FIFOCS), spin);
+-			return ETIMEDOUT;
++			sm.last_stage = "data-dma-error";
++			kprintf("ANGELICA MSDC: CMD17 %llu DMA error int=0x%x\n",
++			    (unsigned long long)lba, ints);
++			error = EIO;
++			break;
++		}
++		if (ints & MSDC_INT_XFER_COMPL) {
++			error = 0;
++			break;
++		}
++		if (mach_absolute_time() > deadline) {
++			sm.last_stage = "data-dma-timeout";
++			kprintf("ANGELICA MSDC: CMD17 %llu DMA timeout int=0x%x dma=0x%x\n",
++			    (unsigned long long)lba, msdc_rd(MSDC_INT),
++			    msdc_rd(MSDC_DMA_CFG));
++			error = ETIMEDOUT;
++			break;
+ 		}
+ 		delay(1);
+ 	}
+-	return 0;
++
++	msdc_dma_stop();
++	msdc_wr(MSDC_INT, MSDC_INT_DATAMASK);
++	if (error == 0) {
++		flush_dcache((vm_offset_t)sm.sector, MSDC_BLOCK, FALSE);
++	}
++
++out:
++	msdc_wr(MSDC_CFG, msdc_rd(MSDC_CFG) | MSDC_CFG_PIO);
++	return error;
+ }
+ 
+ static int

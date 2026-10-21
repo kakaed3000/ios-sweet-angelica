@@ -182,6 +182,7 @@ calibration data, or Apple's copyrighted files.
 | 0112 | Fix ANGELICA MSDC CMD17 data loop timeout path |
 | 0113 | Program SDC_BLK_NUM for ANGELICA MSDC CMD17 |
 | 0114 | Set CMD16 block length and clear FIFO before CMD17 |
+| 0115 | Use basic DMA for ANGELICA CMD17 reads |
 
 ## Warnings
 
