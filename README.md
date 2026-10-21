@@ -14,7 +14,13 @@ Two devices are involved in this tree:
 | Device | Codename | SoC | Role |
 | --- | --- | --- | --- |
 | Redmi 9C | `angelica` | MediaTek MT6765 (Helio G35, 8× Cortex-A53) | **active target** (branch `angelica`) |
-| Redmi Note 10 Pro | `sweet` | Qualcomm SM7150 (Snapdragon 732G, 2× A76 + 6× A55) | reference port (branch `main`); reached the iOS home screen there |
+| Redmi Note 10 Pro | `sweet` | Qualcomm SM7150 (Snapdragon 732G, 2× A76 + 6× A55) | separate upstream project ([dipa-studio/ios-sweet](https://github.com/dipa-studio/ios-sweet)) whose kernel patch base this tree started from |
+
+The Redmi Note 10 Pro work is **not an earlier goal of this project**: it is
+another project (`dipa-studio/ios-sweet`) that already runs iOS 16 on that
+phone. NexRedmi takes its kernel patch base and tooling and targets `angelica`.
+The word "sweet" in this tree always names that phone's codename, never this
+project.
 
 > Status as of **2026-10-21**. This is an experimental bring-up, not a usable
 > phone OS. Apple's security model is mostly switched off.
@@ -28,7 +34,7 @@ markers 1–4), then stops at the next missing CPU feature. The iOS userland has
 
 | Area | State on `angelica` |
 | --- | --- |
-| Bootloader / flashing | Works: stock unlocked ABL → `fastboot flash boot` of the xnuL image. `fastboot boot` is unreliable on this LK variant; always flash. |
+| Bootloader / flashing | Works: stock unlocked MediaTek LK → `fastboot flash boot` of the xnuL image. `fastboot boot` is unreliable on this LK variant; always flash. |
 | xnuL | Works: EL3→EL1 drop, own page tables, display takeover (OVL/RDMA), live-FDT parsing, payload loading (Mach-O segments + ADT + boot_args), framebuffer console, watchdog disabled |
 | Console | Visible on the phone panel (720×1600, fb `0x5e605000`); there is no usable serial UART |
 | XNU kernel build | Works: 4K hardware page tables, 16K software pages (iOS ABI), ARMv8.0 code generation, classic non-large-memory virtual layout |
@@ -37,19 +43,19 @@ markers 1–4), then stops at the next missing CPU feature. The iOS userland has
 | Current blocker | The LSE fix (`0088`, `-mcpu=cortex-a53+crypto`) is committed and being verified in CI; the resulting image has not been flashed yet |
 | iOS userland | Not started on `angelica` (no root filesystem flashed, no launchd/SpringBoard) |
 | Storage root | MSDC/eMMC root driver exists (`0083`, polled single-block reads, untested on hardware) |
-| Display/UI/touch/keys | Not implemented for `angelica` yet; the iOS graphics stack was built for the reference device |
+| Display/UI/touch/keys | Not implemented for `angelica` yet; the iOS graphics stack is the upstream project's |
 
-Everything below about the working GUI refers to the **Redmi Note 10 Pro
-(`sweet`) reference port**, not to the Redmi 9C.
+Everything below about the working GUI refers to the **separate
+`dipa-studio/ios-sweet` project for the Redmi Note 10 Pro**, not to this port.
 
-## What the reference port does
+## What the upstream ios-sweet project does
 
-On `sweet` the phone boots to the **iOS home screen** (as of 2026-10-18): you
+In that project the Redmi Note 10 Pro boots to the **iOS home screen** (as of 2026-10-18): you
 can unlock it, open Settings, pull down Control Center and the notification
 center, and use the touchscreen and hardware buttons. Rendering runs entirely on
 the CPU; there is no GPU driver.
 
-- Boot: stock ABL → xnuL → XNU → own UFS driver → HFS+ root in `userdata` →
+- Boot: stock ABL (Qualcomm) → their loader → XNU → UFS driver → HFS+ root in `userdata` →
   dyld + shared cache → launchd → daemons → backboardd + SpringBoard
 - CPU: 6 of 8 cores (Cortex-A55s) via PSCI, GICv3, timers
 - Display: kernel IOSurface + IOMobileFramebuffer (`AppleCLCD`), CPU rendering,
@@ -66,7 +72,7 @@ on it.**
 ## How xnuL boots the kernel
 
 ```
-ABL (stock Xiaomi bootloader, unlocked)
+MediaTek preloader + LK (stock Xiaomi bootloader, unlocked)
   -> fastboot flash boot xnul-boot.img        (roll back with the stock boot.img)
      -> xnuL: EL drop, own MMU, display takeover, live FDT
         -> payload (kernel Mach-O segments + ADT + boot-args)
@@ -144,12 +150,12 @@ primary log.
 | `tools/mkadt.py` | Generates the Apple Device Tree (MMIO, CPU, display, identity); `--angelica` for the Redmi 9C |
 | `tools/mkpayload.py` | Packs kernel + ADT + boot-args into the xnuL payload |
 | `tools/unpack_bootv2.py` | Android `boot.img` v2 unpacker (headers, DTB, round-trip checks) |
-| `tools/mkiosroot.sh` | Builds the HFS+ iOS root from IPSW images (reference device) |
+| `tools/mkiosroot.sh` | Builds the HFS+ iOS root from IPSW images (upstream ios-sweet project) |
 | `tools/sweet-root-tweaks.py` | Bring-up changes to that root (Setup skip, activation, daemons) |
-| `tools/sweet-log-pull.sh`, `sweet-log.py` | Read the persistent kernel log from recovery (reference device) |
+| `tools/sweet-log-pull.sh`, `sweet-log.py` | Read the persistent kernel log from recovery (upstream ios-sweet project) |
 | `tools/sweet-crash.py` | Symbolicate console crash reports |
 | `tools/xnu-cc.py` | Local single-file compile check from a CI log |
-| `tools/qemu-sweet.py` | QEMU test boots (reference-device configuration) |
+| `tools/qemu-sweet.py` | QEMU test boots (upstream sweet configuration) |
 | `tools/adt.py`, `remotezip.py`, `sparsediff.py` | Helpers |
 | `NOTES.md` | Detailed engineering log: every boot, crash, decision and hardware fact |
 
@@ -164,7 +170,7 @@ calibration data, or Apple's copyrighted files.
 | 0001–0009 | Toolchain compatibility, SWEET machine config, non-PAC arm64, stubs for Apple-internal pieces |
 | 0010–0018 | Early framebuffer console, physmap fix, PRNG, device-tree platform expert, timer PPI, boot CPU |
 | 0019–0027 | libpthread provider, BearSSL AES, RAM-disk root, mockfs, SHA-256, minimal AMFI, HFS+ |
-| 0028–0034 | UFS host driver and root device, read/write root, DMA above 4 GiB (reference device) |
+| 0028–0034 | UFS host driver and root device, read/write root, DMA above 4 GiB (upstream sweet project) |
 | 0035–0045 | Entitlements, bindfs, AppleKeyStore stub, IOWatchdog, crash reports |
 | 0046 | IOSurface + IOMobileFramebuffer (`AppleCLCD`) services |
 | 0047–0057 | Diagnostics, sandbox permissiveness, HFS fixes, throttled panel copy |
@@ -179,8 +185,8 @@ calibration data, or Apple's copyrighted files.
 
 ## Warnings
 
-- Experimental. Expect hangs, panics and data loss; the reference build already
-  erases `userdata`, and this port will do the same once an iOS root is flashed.
+- Experimental. Expect hangs, panics and data loss; the upstream ios-sweet build
+  already erases `userdata`, and this port will do the same once an iOS root is flashed.
 - Security is deliberately off: permissive AMFI, stub AppleKeyStore, no data
   protection, no sandbox profiles. Never store personal data.
 - Only flash `boot` on `angelica` until the port reaches userland. Keep stock
@@ -190,7 +196,9 @@ calibration data, or Apple's copyrighted files.
 
 ## Credits
 
-Built on Apple's open-source releases (xnu, IOHIDFamily, libpthread, hfs),
+Built on Apple's open-source releases (xnu, IOHIDFamily, libpthread, hfs), the
+[dipa-studio/ios-sweet](https://github.com/dipa-studio/ios-sweet) project (the
+Redmi Note 10 Pro port this tree started from),
 [BearSSL](https://bearssl.org),
 [blacktop/darwin-xnu-build](https://github.com/blacktop/darwin-xnu-build),
 [ipsw](https://github.com/blacktop/ipsw), Qualcomm/Xiaomi's published Linux
