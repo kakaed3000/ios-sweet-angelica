@@ -1,0 +1,15 @@
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -798,10 +798,9 @@
+ //	ANGELICA: root on a GPT partition of the internal eMMC (bsd/dev/angelica_msdc.c)
+ //
+ 	kprintf("IOFindBSDRoot: ANGELICA eMMC root lookup\n");
+-	int is_msdc_root = (strncmp(rdBootVar, "msdcroot0", 9) == 0);
+ 	kprintf("IOFindBSDRoot: rootdev=%s len=%zu is_msdc=%d\n",
+-	    rdBootVar, strlen(rdBootVar), is_msdc_root);
+-	if (is_msdc_root) {
++	    rdBootVar, strlen(rdBootVar), strncmp(rdBootVar, "msdcroot0", 9) == 0);
++	if (strncmp(rdBootVar, "msdcroot0", 9) == 0) {
+ 		extern int angelica_msdc_rootdev(dev_t *dev);
+ 		OSSafeReleaseNULL(matching);
+ 		kprintf("IOFindBSDRoot: calling angelica_msdc_rootdev\n");
