@@ -1,0 +1,186 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -52,13 +52,25 @@
+ #define MSDC_INT_DATAMASK   (MSDC_INT_XFER_COMPL | MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)
+ 
+ #define SDC_STS_SDCBUSY     (1u << 0)
++#define SDC_CFG_WRDTOC      (0x1fffu << 2)
++#define SDC_CFG_BUSWIDTH    (0x3u << 16)
+ #define SDC_CFG_DTOC        (0xffu << 24)
++#define R1_READY_FOR_DATA   (1u << 8)
+ 
+ #define MSDC_FIFOCS_RXCNT   0xffu
+ #define MSDC_FIFOCS_CLR     (1u << 31)
+ #define MSDC_CFG_PIO        (1u << 3)
+ #define MSDC_CFG_CKPDN      (1u << 1)
++#define MSDC_CFG_RST        (1u << 2)
++#define MSDC_CFG_CKDRVEN    (1u << 4)
+ #define MSDC_CFG_CKSTB      (1u << 7)
++#define MSDC_CFG_CKDIV      (0xfffu << 8)
++#define MSDC_CFG_CKMOD      (3u << 20)
++#define MSDC_CFG_CKMOD_HS400 (1u << 22)
++#define MSDC_CFG_SCLK_STOP_DDR (1u << 25)
++#define MSDC_DMA_CTRL       0x98
++#define MSDC_DMA_CTRL_STOP  (1u << 1)
++#define MSDC_DMA_CFG        0x9c
+ #define MSDC_BLOCK          512u                /* CMD17 block length */
+ #define MSDC_FIFO_WORDS     (MSDC_BLOCK / 4)
+ #define CMD_TIMEOUT_NS      (2ull * NSEC_PER_SEC)
+@@ -210,6 +222,121 @@
+ }
+ 
+ static int
++msdc_prepare_card(void)
++{
++	uint32_t cfg, sdc_cfg;
++
++	/* Stop anything the bootloader may have left running. */
++	msdc_wr(MSDC_DMA_CTRL, MSDC_DMA_CTRL_STOP);
++	msdc_wr(MSDC_DMA_CFG, 0);
++	msdc_wr(MSDC_INTEN, 0);
++
++	cfg = msdc_rd(MSDC_CFG);
++	cfg &= ~(MSDC_CFG_CKMOD | MSDC_CFG_CKMOD_HS400 | MSDC_CFG_SCLK_STOP_DDR);
++	cfg |= MSDC_CFG_PIO;
++	cfg &= ~MSDC_CFG_CKPDN;
++	cfg = (cfg & ~MSDC_CFG_CKDIV) | (0x40u << 8);
++	msdc_wr(MSDC_CFG, cfg);
++	for (uint32_t i = 0; !(msdc_rd(MSDC_CFG) & MSDC_CFG_CKSTB) && i < 100; i++) {
++		delay(1);
++	}
++	if (!(msdc_rd(MSDC_CFG) & MSDC_CFG_CKSTB)) {
++		printf("ANGELICA MSDC: clock did not become stable cfg=0x%x\n",
++		    msdc_rd(MSDC_CFG));
++		return ETIMEDOUT;
++	}
++
++	msdc_wr(MSDC_FIFOCS, MSDC_FIFOCS_CLR);
++	for (uint32_t i = 0; (msdc_rd(MSDC_FIFOCS) & MSDC_FIFOCS_CLR) && i < 100; i++) {
++		delay(1);
++	}
++	msdc_wr(MSDC_INT, MSDC_INT_CMDMASK | MSDC_INT_DATAMASK);
++
++	/* The card is reset below, so put the host in the card's default mode:
++	 * SDR, 1-bit, with generous command/data timeouts. */
++	sdc_cfg = msdc_rd(SDC_CFG);
++	sdc_cfg &= ~SDC_CFG_BUSWIDTH;
++	sdc_cfg = (sdc_cfg & ~SDC_CFG_WRDTOC) | (0x1fffu << 2);
++	sdc_cfg = (sdc_cfg & ~SDC_CFG_DTOC) | (0xffu << 24);
++	msdc_wr(SDC_CFG, sdc_cfg);
++
++	sm.last_stage = "card-clk";
++	printf("ANGELICA MSDC: card cfg=0x%x sdc_cfg=0x%x\n",
++	    msdc_rd(MSDC_CFG), msdc_rd(SDC_CFG));
++	return 0;
++}
++
++static int
++msdc_card_init(void)
++{
++	uint32_t resp = 0;
++	uint32_t rca = 0;
++	uint64_t deadline;
++	int error;
++
++	sm.last_stage = "card-cmd0";
++	error = msdc_cmd(0, 0, 0, 0, NULL);
++	if (error) {
++		return error;
++	}
++	delay(10);
++
++	sm.last_stage = "card-cmd1";
++	deadline = msdc_deadline(2ull * NSEC_PER_SEC);
++	do {
++		error = msdc_cmd(1, 0x40ff8080, 3, 0, &resp);
++		if (error) {
++			return error;
++		}
++		if (resp & (1u << 31)) {
++			break;
++		}
++		delay(10);
++	} while (mach_absolute_time() < deadline);
++	if (!(resp & (1u << 31))) {
++		return ETIMEDOUT;
++	}
++
++	sm.last_stage = "card-cmd2";
++	error = msdc_cmd(2, 0, 2, 0, &resp);
++	if (error) {
++		return error;
++	}
++
++	sm.last_stage = "card-cmd3";
++	error = msdc_cmd(3, 0, 1, 0, &resp);
++	if (error) {
++		return error;
++	}
++	rca = resp & 0xffff0000u;
++	if (rca == 0) {
++		return EIO;
++	}
++
++	sm.last_stage = "card-cmd7";
++	error = msdc_cmd(7, rca, 1, 0, &resp);
++	if (error) {
++		return error;
++	}
++
++	sm.last_stage = "card-cmd13";
++	deadline = msdc_deadline(NSEC_PER_SEC);
++	do {
++		error = msdc_cmd(13, rca, 1, 0, &resp);
++		if (!error && (resp & R1_READY_FOR_DATA)) {
++			break;
++		}
++		delay(1);
++	} while (mach_absolute_time() < deadline);
++	if (error || !(resp & R1_READY_FOR_DATA)) {
++		return error ? error : ETIMEDOUT;
++	}
++
++	printf("ANGELICA MSDC: card ready rca=0x%x status=0x%x\n", rca, resp);
++	return 0;
++}
++
++static int
+ msdc_find_partition(const char *want)
+ {
+ 	uint64_t entry_lba;
+@@ -453,7 +580,6 @@
+ 	uintptr_t const *reg = NULL;
+ 	unsigned int size = 0;
+ 	char want[64] = "userdata";
+-	uint32_t cfg, sdc_cfg;
+ 	int error;
+ 
+ 	if (SecureDTLookupEntry(NULL, "/angelica-msdc", &node) != kSuccess ||
+@@ -469,19 +595,16 @@
+ 
+ 	lck_mtx_lock(&angelica_msdc_lock);
+ 	msdc_wr(MSDC_INTEN, 0);                 /* polled operation */
+-	cfg = msdc_rd(MSDC_CFG);
+-	msdc_wr(MSDC_CFG, (cfg | MSDC_CFG_PIO) & ~MSDC_CFG_CKPDN);
+-	for (uint32_t i = 0; !(msdc_rd(MSDC_CFG) & MSDC_CFG_CKSTB) && i < 100; i++) {
+-		delay(1);
++	error = msdc_prepare_card();
++	if (error == 0) {
++		error = msdc_card_init();
+ 	}
+-	msdc_wr(MSDC_FIFOCS, MSDC_FIFOCS_CLR);
+-	msdc_wr(MSDC_INT, MSDC_INT_CMDMASK | MSDC_INT_DATAMASK);
+-	sdc_cfg = msdc_rd(SDC_CFG);
+-	msdc_wr(SDC_CFG, (sdc_cfg & ~SDC_CFG_DTOC) | (0x20u << 24));
+-	printf("ANGELICA MSDC: regs %p cfg=0x%x->0x%x sdc_cfg=0x%x->0x%x sts=0x%x fifo=0x%x int=0x%x\n",
+-	    (void *)sm.regs, cfg, msdc_rd(MSDC_CFG), sdc_cfg, msdc_rd(SDC_CFG),
++	if (error == 0) {
++		error = msdc_find_partition(want);
++	}
++	printf("ANGELICA MSDC: regs %p cfg=0x%x sdc_cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
++	    (void *)sm.regs, msdc_rd(MSDC_CFG), msdc_rd(SDC_CFG),
+ 	    msdc_rd(SDC_STS), msdc_rd(MSDC_FIFOCS), msdc_rd(MSDC_INT));
+-	error = msdc_find_partition(want);
+ 	lck_mtx_unlock(&angelica_msdc_lock);
+ 	if (error) {
+ 		panic("ANGELICA MSDC: init failed err=%d stage=%s cfg=0x%x sdc_cfg=0x%x sts=0x%x fifo=0x%x int=0x%x",
