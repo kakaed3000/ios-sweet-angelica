@@ -176,6 +176,7 @@ calibration data, or Apple's copyrighted files.
 | 0106 | Add ANGELICA MSDC entry/prepare/init stage markers |
 | 0107 | Match msdcroot0 by prefix and trace rootdev call |
 | 0108 | Fix goto crossing declaration in IOFindBSDRoot |
+| 0109 | Add kprintf at ANGELICA MSDC rootdev entry |
 
 ## Warnings
 

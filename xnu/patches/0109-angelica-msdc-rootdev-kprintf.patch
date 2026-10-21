@@ -1,0 +1,10 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -648,6 +648,7 @@
+ int
+ angelica_msdc_rootdev(dev_t *dev)
+ {
++	kprintf("ANGELICA MSDC: rootdev enter kprintf\n");
+ 	printf("ANGELICA MSDC: rootdev enter\n");
+ 	if (!sm.ready) {
+ 		int error = angelica_msdc_init();
