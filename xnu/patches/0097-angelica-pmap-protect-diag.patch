@@ -1,0 +1,14 @@
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -4946,6 +4946,11 @@
+ 			pt_entry_t spte = *pte_p;
+ 			if (pte_was_writeable(spte)) {
+ 				pte_set_was_writeable(spte, false);
++				if (((uintptr_t)pte_p) & 0x1f) {
++					panic("%s: unaligned PTE, va=%p pmap=%p pte_p=%p spte=%p ptd=%p",
++					    __func__, (void*)va, pmap, pte_p, (void*)spte,
++					    ptep_get_ptd(pte_p));
++				}
+ 				write_pte_fast(pte_p, spte);
+ 			} else {
+ 				goto protect_skip_pve_pass2;
