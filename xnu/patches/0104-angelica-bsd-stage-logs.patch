@@ -1,0 +1,42 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -490,7 +490,7 @@
+ 	platform_stall_panic_or_spin(PLATFORM_STALL_XNU_LOCATION_BSD_INIT);
+ #endif
+ 
+-#define DEBUG_BSDINIT 0
++#define DEBUG_BSDINIT 1
+ 
+ #if DEBUG_BSDINIT
+ #define bsd_init_kprintf(x, ...) kprintf("bsd_init: " x, ## __VA_ARGS__)
+@@ -799,9 +799,12 @@
+ 
+ 	bsd_init_kprintf("calling bsd_autoconf\n");
+ 	bsd_autoconf();
++	kprintf("bsd_init: bsd_autoconf returned\n");
+ 
+ #if CONFIG_DTRACE
++	kprintf("bsd_init: calling dtrace_postinit\n");
+ 	dtrace_postinit();
++	kprintf("bsd_init: dtrace_postinit returned\n");
+ #endif
+ 
+ 	/*
+@@ -873,13 +876,17 @@
+ 		int err;
+ 
+ 		bsd_init_kprintf("calling setconf\n");
++		kprintf("bsd_init: calling setconf/IOFindBSDRoot\n");
+ 		setconf();
++		kprintf("bsd_init: setconf returned, rootdevice=%s\n", rootdevice);
+ #if CONFIG_NETBOOT
+ 		netboot = (mountroot == netboot_mountroot);
+ #endif
+ 
+ 		bsd_init_kprintf("vfs_mountroot\n");
++		kprintf("bsd_init: calling vfs_mountroot\n");
+ 		if (0 == (err = vfs_mountroot())) {
++			kprintf("bsd_init: vfs_mountroot returned 0\n");
+ 			break;
+ 		}
+ 		rootdevice[0] = '\0';

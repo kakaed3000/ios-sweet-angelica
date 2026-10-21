@@ -171,6 +171,7 @@ calibration data, or Apple's copyrighted files.
 | 0101 | Initialize the ANGELICA eMMC card in SDR/1-bit instead of inheriting LK state |
 | 0102 | Pass the eMMC RCA in CMD3 and verify the response |
 | 0103 | Print BSD autoconf/kminit stage markers |
+| 0104 | Enable BSD init stage logs and mark setconf/vfs_mountroot |
 
 ## Warnings
 
