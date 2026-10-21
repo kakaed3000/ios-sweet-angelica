@@ -1,0 +1,226 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -128,7 +128,7 @@
+ 	while (msdc_rd(SDC_STS) & SDC_STS_SDCBUSY) {
+ 		if (mach_absolute_time() > deadline) {
+ 			sm.last_stage = "busy";
+-			printf("ANGELICA MSDC: CMD%u busy timeout sts=0x%x cfg=0x%x\n",
++			kprintf("ANGELICA MSDC: CMD%u busy timeout sts=0x%x cfg=0x%x\n",
+ 			    opcode, msdc_rd(SDC_STS), msdc_rd(MSDC_CFG));
+ 			return ETIMEDOUT;
+ 		}
+@@ -146,7 +146,7 @@
+ 		}
+ 		if (mach_absolute_time() > deadline) {
+ 			sm.last_stage = "cmd-irq";
+-			printf("ANGELICA MSDC: CMD%u irq timeout int=0x%x sts=0x%x cfg=0x%x\n",
++			kprintf("ANGELICA MSDC: CMD%u irq timeout int=0x%x sts=0x%x cfg=0x%x\n",
+ 			    opcode, msdc_rd(MSDC_INT), msdc_rd(SDC_STS), msdc_rd(MSDC_CFG));
+ 			return ETIMEDOUT;
+ 		}
+@@ -155,7 +155,7 @@
+ 	msdc_wr(MSDC_INT, ints);
+ 	if (ints & (MSDC_INT_CMDTMO | MSDC_INT_RSPCRCERR)) {
+ 		sm.last_stage = "cmd-status";
+-		printf("ANGELICA MSDC: CMD%u error int=0x%x\n", opcode, ints);
++		kprintf("ANGELICA MSDC: CMD%u error int=0x%x\n", opcode, ints);
+ 		return EIO;
+ 	}
+ 	if (resp) {
+@@ -180,7 +180,7 @@
+ 		return error;
+ 	}
+ 	if (resp & (R1_OUT_OF_RANGE | R1_ERROR)) {
+-		printf("ANGELICA MSDC: CMD17 %llu status 0x%x\n", lba, resp);
++		kprintf("ANGELICA MSDC: CMD17 %llu status 0x%x\n", lba, resp);
+ 		return EIO;
+ 	}
+ 
+@@ -191,7 +191,7 @@
+ 		}
+ 		if (ints & (MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)) {
+ 			sm.last_stage = "data";
+-			printf("ANGELICA MSDC: CMD17 %llu data error int=0x%x left=%u\n",
++			kprintf("ANGELICA MSDC: CMD17 %llu data error int=0x%x left=%u\n",
+ 			    (unsigned long long)lba, ints, left);
+ 			return EIO;
+ 		}
+@@ -211,7 +211,7 @@
+ 		}
+ 		if (mach_absolute_time() > deadline) {
+ 			sm.last_stage = "data-timeout";
+-			printf("ANGELICA MSDC: CMD17 %llu data timeout int=0x%x left=%u fifo=0x%x\n",
++			kprintf("ANGELICA MSDC: CMD17 %llu data timeout int=0x%x left=%u fifo=0x%x\n",
+ 			    (unsigned long long)lba, msdc_rd(MSDC_INT), left,
+ 			    msdc_rd(MSDC_FIFOCS));
+ 			return ETIMEDOUT;
+@@ -226,12 +226,12 @@
+ {
+ 	uint32_t cfg, sdc_cfg;
+ 
+-	printf("ANGELICA MSDC: prepare enter\n");
++	kprintf("ANGELICA MSDC: prepare enter\n");
+ 	/* Stop anything the bootloader may have left running. */
+ 	msdc_wr(MSDC_DMA_CTRL, MSDC_DMA_CTRL_STOP);
+ 	msdc_wr(MSDC_DMA_CFG, 0);
+ 	msdc_wr(MSDC_INTEN, 0);
+-	printf("ANGELICA MSDC: dma stopped\n");
++	kprintf("ANGELICA MSDC: dma stopped\n");
+ 
+ 	cfg = msdc_rd(MSDC_CFG);
+ 	cfg &= ~(MSDC_CFG_CKMOD | MSDC_CFG_CKMOD_HS400 | MSDC_CFG_SCLK_STOP_DDR);
+@@ -239,24 +239,24 @@
+ 	cfg &= ~MSDC_CFG_CKPDN;
+ 	cfg = (cfg & ~MSDC_CFG_CKDIV) | (0x40u << 8);
+ 	msdc_wr(MSDC_CFG, cfg);
+-	printf("ANGELICA MSDC: cfg written, waiting clock\n");
++	kprintf("ANGELICA MSDC: cfg written, waiting clock\n");
+ 	for (uint32_t i = 0; !(msdc_rd(MSDC_CFG) & MSDC_CFG_CKSTB) && i < 100; i++) {
+ 		delay(1);
+ 	}
+-	printf("ANGELICA MSDC: clock wait done\n");
++	kprintf("ANGELICA MSDC: clock wait done\n");
+ 	if (!(msdc_rd(MSDC_CFG) & MSDC_CFG_CKSTB)) {
+-		printf("ANGELICA MSDC: clock did not become stable cfg=0x%x\n",
++		kprintf("ANGELICA MSDC: clock did not become stable cfg=0x%x\n",
+ 		    msdc_rd(MSDC_CFG));
+ 		return ETIMEDOUT;
+ 	}
+ 
+-	printf("ANGELICA MSDC: clearing fifo\n");
++	kprintf("ANGELICA MSDC: clearing fifo\n");
+ 	msdc_wr(MSDC_FIFOCS, MSDC_FIFOCS_CLR);
+ 	for (uint32_t i = 0; (msdc_rd(MSDC_FIFOCS) & MSDC_FIFOCS_CLR) && i < 100; i++) {
+ 		delay(1);
+ 	}
+ 	msdc_wr(MSDC_INT, MSDC_INT_CMDMASK | MSDC_INT_DATAMASK);
+-	printf("ANGELICA MSDC: fifo cleared\n");
++	kprintf("ANGELICA MSDC: fifo cleared\n");
+ 
+ 	/* The card is reset below, so put the host in the card's default mode:
+ 	 * SDR, 1-bit, with generous command/data timeouts. */
+@@ -267,7 +267,7 @@
+ 	msdc_wr(SDC_CFG, sdc_cfg);
+ 
+ 	sm.last_stage = "card-clk";
+-	printf("ANGELICA MSDC: card cfg=0x%x sdc_cfg=0x%x\n",
++	kprintf("ANGELICA MSDC: card cfg=0x%x sdc_cfg=0x%x\n",
+ 	    msdc_rd(MSDC_CFG), msdc_rd(SDC_CFG));
+ 	return 0;
+ }
+@@ -315,7 +315,7 @@
+ 	if (error) {
+ 		return error;
+ 	}
+-	printf("ANGELICA MSDC: CMD3 resp=0x%x\n", resp);
++	kprintf("ANGELICA MSDC: CMD3 resp=0x%x\n", resp);
+ 
+ 	sm.last_stage = "card-cmd7";
+ 	error = msdc_cmd(7, rca, 1, 0, &resp);
+@@ -336,7 +336,7 @@
+ 		return error ? error : ETIMEDOUT;
+ 	}
+ 
+-	printf("ANGELICA MSDC: card ready rca=0x%x status=0x%x\n", rca, resp);
++	kprintf("ANGELICA MSDC: card ready rca=0x%x status=0x%x\n", rca, resp);
+ 	return 0;
+ }
+ 
+@@ -349,20 +349,20 @@
+ 
+ 	error = msdc_read_sector(1);
+ 	if (error) {
+-		printf("ANGELICA MSDC: GPT sector read failed: %d cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
++		kprintf("ANGELICA MSDC: GPT sector read failed: %d cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
+ 		    error, msdc_rd(MSDC_CFG), msdc_rd(SDC_STS), msdc_rd(MSDC_FIFOCS),
+ 		    msdc_rd(MSDC_INT));
+ 		return error;
+ 	}
+ 	if (memcmp(sm.sector, "EFI PART", 8) != 0) {
+-		printf("ANGELICA MSDC: no GPT\n");
++		kprintf("ANGELICA MSDC: no GPT\n");
+ 		return ENXIO;
+ 	}
+ 	memcpy(&entry_lba, sm.sector + 72, 8);
+ 	memcpy(&nent, sm.sector + 80, 4);
+ 	memcpy(&esz, sm.sector + 84, 4);
+ 	if (esz != 128 || nent == 0 || nent > 512) {
+-		printf("ANGELICA MSDC: unsupported GPT entries %u x %u\n", nent, esz);
++		kprintf("ANGELICA MSDC: unsupported GPT entries %u x %u\n", nent, esz);
+ 		return ENXIO;
+ 	}
+ 
+@@ -400,7 +400,7 @@
+ 		sm.nblocks = last - first + 1;
+ 		return 0;
+ 	}
+-	printf("ANGELICA MSDC: no GPT partition named \"%s\"\n", want);
++	kprintf("ANGELICA MSDC: no GPT partition named \"%s\"\n", want);
+ 	return ENOENT;
+ }
+ 
+@@ -586,35 +586,35 @@
+ 	char want[64] = "userdata";
+ 	int error;
+ 
+-	printf("ANGELICA MSDC: init enter\n");
++	kprintf("ANGELICA MSDC: init enter\n");
+ 	if (SecureDTLookupEntry(NULL, "/angelica-msdc", &node) != kSuccess ||
+ 	    SecureDTGetProperty(node, "reg", (void const **)&reg, &size) != kSuccess ||
+ 	    size < 2 * sizeof(uintptr_t)) {
+-		printf("ANGELICA MSDC: no /angelica-msdc node in the device tree\n");
++		kprintf("ANGELICA MSDC: no /angelica-msdc node in the device tree\n");
+ 		return ENXIO;
+ 	}
+ 	PE_parse_boot_argn("msdcroot", want, sizeof(want));
+ 
+-	printf("ANGELICA MSDC: mapping reg %p size 0x%x\n", (void *)reg[0], (unsigned)reg[1]);
++	kprintf("ANGELICA MSDC: mapping reg %p size 0x%x\n", (void *)reg[0], (unsigned)reg[1]);
+ 	sm.regs = ml_io_map(reg[0], reg[1]);
+-	printf("ANGELICA MSDC: mapped regs %p\n", (void *)sm.regs);
++	kprintf("ANGELICA MSDC: mapped regs %p\n", (void *)sm.regs);
+ 	sm.secsize = DEV_BSIZE;
+ 
+-	printf("ANGELICA MSDC: locking\n");
++	kprintf("ANGELICA MSDC: locking\n");
+ 	lck_mtx_lock(&angelica_msdc_lock);
+-	printf("ANGELICA MSDC: locked\n");
++	kprintf("ANGELICA MSDC: locked\n");
+ 	msdc_wr(MSDC_INTEN, 0);                 /* polled operation */
+ 	error = msdc_prepare_card();
+-	printf("ANGELICA MSDC: prepare returned %d\n", error);
++	kprintf("ANGELICA MSDC: prepare returned %d\n", error);
+ 	if (error == 0) {
+-		printf("ANGELICA MSDC: card init enter\n");
++		kprintf("ANGELICA MSDC: card init enter\n");
+ 		error = msdc_card_init();
+-		printf("ANGELICA MSDC: card init returned %d\n", error);
++		kprintf("ANGELICA MSDC: card init returned %d\n", error);
+ 	}
+ 	if (error == 0) {
+ 		error = msdc_find_partition(want);
+ 	}
+-	printf("ANGELICA MSDC: regs %p cfg=0x%x sdc_cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
++	kprintf("ANGELICA MSDC: regs %p cfg=0x%x sdc_cfg=0x%x sts=0x%x fifo=0x%x int=0x%x\n",
+ 	    (void *)sm.regs, msdc_rd(MSDC_CFG), msdc_rd(SDC_CFG),
+ 	    msdc_rd(SDC_STS), msdc_rd(MSDC_FIFOCS), msdc_rd(MSDC_INT));
+ 	lck_mtx_unlock(&angelica_msdc_lock);
+@@ -637,7 +637,7 @@
+ 	devfs_make_node(sm.bdev, DEVFS_BLOCK, UID_ROOT, GID_OPERATOR, 0640, "msdcroot0");
+ 	devfs_make_node(makedev(sm.cmajor, 0), DEVFS_CHAR, UID_ROOT, GID_OPERATOR, 0640, "rmsdcroot0");
+ 	sm.ready = true;
+-	printf("ANGELICA MSDC: \"%s\": first block 0x%llx, %llu MiB, read-only\n",
++	kprintf("ANGELICA MSDC: \"%s\": first block 0x%llx, %llu MiB, read-only\n",
+ 	    want, sm.first_block, sm.nblocks * MSDC_BLOCK >> 20);
+ 	return 0;
+ }
+@@ -648,8 +648,7 @@
+ int
+ angelica_msdc_rootdev(dev_t *dev)
+ {
+-	kprintf("ANGELICA MSDC: rootdev enter kprintf\n");
+-	printf("ANGELICA MSDC: rootdev enter\n");
++	kprintf("ANGELICA MSDC: rootdev enter\n");
+ 	if (!sm.ready) {
+ 		int error = angelica_msdc_init();
+ 		if (error) {
