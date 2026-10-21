@@ -1,0 +1,49 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -46,11 +46,12 @@
+ #define MSDC_INT_CMDTMO     (1u << 9)
+ #define MSDC_INT_RSPCRCERR  (1u << 10)
+ #define MSDC_INT_XFER_COMPL (1u << 12)
++#define MSDC_INT_DXFER_DONE (1u << 13)
+ #define MSDC_INT_DATTMO     (1u << 14)
+ #define MSDC_INT_DATCRCERR  (1u << 15)
+ 
+ #define MSDC_INT_CMDMASK    (MSDC_INT_CMDRDY | MSDC_INT_CMDTMO | MSDC_INT_RSPCRCERR)
+-#define MSDC_INT_DATAMASK   (MSDC_INT_XFER_COMPL | MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)
++#define MSDC_INT_DATAMASK   (MSDC_INT_XFER_COMPL | MSDC_INT_DXFER_DONE | MSDC_INT_DATTMO | MSDC_INT_DATCRCERR)
+ 
+ #define SDC_STS_SDCBUSY     (1u << 0)
+ #define SDC_CFG_WRDTOC      (0x1fffu << 2)
+@@ -178,6 +179,10 @@
+ 	int error;
+ 
+ 	msdc_wr(SDC_BLK_NUM, 1);
++	msdc_wr(MSDC_FIFOCS, MSDC_FIFOCS_CLR);
++	for (uint32_t i = 0; (msdc_rd(MSDC_FIFOCS) & MSDC_FIFOCS_CLR) && i < 100; i++) {
++		delay(1);
++	}
+ 	error = msdc_cmd(17, (uint32_t)lba, 1, 1, &resp);
+ 	if (error) {
+ 		return error;
+@@ -198,7 +203,7 @@
+ 			    (unsigned long long)lba, ints, left);
+ 			return EIO;
+ 		}
+-		if (ints & MSDC_INT_XFER_COMPL) {
++		if (ints & (MSDC_INT_XFER_COMPL | MSDC_INT_DXFER_DONE)) {
+ 			xfer_done = true;
+ 		}
+ 		uint32_t rx = msdc_rd(MSDC_FIFOCS) & MSDC_FIFOCS_RXCNT;
+@@ -324,6 +329,12 @@
+ 	if (error) {
+ 		return error;
+ 	}
++
++	sm.last_stage = "card-cmd16";
++	error = msdc_cmd(16, MSDC_BLOCK, 1, 0, &resp);
++	if (error) {
++		return error;
++	}
+ 
+ 	sm.last_stage = "card-cmd13";
+ 	deadline = msdc_deadline(NSEC_PER_SEC);
