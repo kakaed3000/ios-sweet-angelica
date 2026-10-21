@@ -1,0 +1,96 @@
+--- a/osfmk/vm/vm_kern.c
++++ b/osfmk/vm/vm_kern.c
+@@ -3370,6 +3370,13 @@
+ __startup_data
+ uint32_t kmem_claim_count = 0;
+ 
++static uint64_t kmem_dbg_L0, kmem_dbg_pre, kmem_dbg_L;
++static uint64_t kmem_dbg_ptr, kmem_dbg_meta, kmem_dbg_spray, kmem_dbg_data;
++static uint64_t kmem_dbg_fuzz, kmem_dbg_free, kmem_dbg_prev_end;
++static uint32_t kmem_dbg_retry;
++static const char *kmem_dbg_prev = "none";
++extern vm_offset_t virtual_space_start;
++
+ __startup_func
+ void
+ kmem_range_startup_init(
+@@ -3525,8 +3532,9 @@
+ {
+ 	vm_map_size_t largest_free_size = 0, total_claims = 0;
+ 
+-	vm_map_sizes(kernel_map, NULL, NULL, &largest_free_size);
++	vm_map_sizes(kernel_map, NULL, &kmem_dbg_free, &largest_free_size);
+ 	largest_free_size = trunc_page(largest_free_size);
++	kmem_dbg_L0 = largest_free_size;
+ 	printf("KMEMDBG L0=%llx claims=%u\n", (unsigned long long)largest_free_size,
+ 	    kmem_claim_count);
+ 
+@@ -3545,6 +3553,8 @@
+ 	}
+ 	assert((total_claims & PAGE_MASK) == 0);
+ 	largest_free_size -= total_claims;
++	kmem_dbg_pre = total_claims;
++	kmem_dbg_L = largest_free_size;
+ 	printf("KMEMDBG L=%llx pre=%llx\n", (unsigned long long)largest_free_size,
+ 	    (unsigned long long)total_claims);
+ 
+@@ -3572,6 +3582,10 @@
+ 	 * Add claims for kmem's ranges
+ 	 */
+ 	data_range_size += kmem_add_ptr_claims();
++	kmem_dbg_ptr = ptr_range_size;
++	kmem_dbg_meta = kmem_meta_size;
++	kmem_dbg_spray = sprayqtn_range_size;
++	kmem_dbg_data = data_range_size;
+ 	printf("KMEMDBG ptr=%llx meta=%llx spray=%llx data=%llx\n",
+ 	    (unsigned long long)ptr_range_size, (unsigned long long)kmem_meta_size,
+ 	    (unsigned long long)sprayqtn_range_size, (unsigned long long)data_range_size);
+@@ -3627,6 +3641,7 @@
+ 	 * do not admit this address to be part of any zone submap.
+ 	 */
+ 	start = kmem_fuzz_start();
++	kmem_dbg_fuzz = start;
+ 	printf("KMEMDBG fuzzend=%llx\n", (unsigned long long)start);
+ 
+ 	/*
+@@ -3647,15 +3662,36 @@
+ 		vm_map_offset_t end = 0;
+ 		struct kmem_range_startup_spec sp = kmem_claims[i];
+ 		struct mach_vm_range *sp_range = sp.kc_range;
+-		if (vm_map_locate_space(kernel_map, sp.kc_size, 0,
+-		    VM_MAP_KERNEL_FLAGS_ANYWHERE(), &start, NULL) != KERN_SUCCESS) {
++		kern_return_t kr = vm_map_locate_space(kernel_map, sp.kc_size, 0,
++		    VM_MAP_KERNEL_FLAGS_ANYWHERE(), &start, NULL);
++		if (kr != KERN_SUCCESS) {
++			kmem_dbg_retry++;
++			start = 0;
++			kr = vm_map_locate_space(kernel_map, sp.kc_size, 0,
++			    VM_MAP_KERNEL_FLAGS_ANYWHERE(), &start, NULL);
++		}
++		if (kr != KERN_SUCCESS) {
+ 			printf("KMEMDBG FAIL name=%s size=%llx start=%llx\n", sp.kc_name,
+ 			    (unsigned long long)sp.kc_size, (unsigned long long)start);
+-			panic("kmem_range_init: vm_map_locate_space failing for claim %s",
+-			    sp.kc_name);
++			panic("kmem %s\nsize=%llx i=%u/%u retry=%u\nstart=%llx prev=%s\n"
++			    "prevend=%llx\nL0=%llx free=%llx\npre=%llx L=%llx\n"
++			    "vstart=%llx zmin=%llx\nfuzz=%llx\nptr=%llx spray=%llx\n"
++			    "data=%llx meta=%llx",
++			    sp.kc_name, (unsigned long long)sp.kc_size, i, kmem_claim_count,
++			    kmem_dbg_retry, (unsigned long long)start, kmem_dbg_prev,
++			    (unsigned long long)kmem_dbg_prev_end,
++			    (unsigned long long)kmem_dbg_L0, (unsigned long long)kmem_dbg_free,
++			    (unsigned long long)kmem_dbg_pre, (unsigned long long)kmem_dbg_L,
++			    (unsigned long long)virtual_space_start,
++			    (unsigned long long)sp_range->min_address,
++			    (unsigned long long)kmem_dbg_fuzz,
++			    (unsigned long long)kmem_dbg_ptr, (unsigned long long)kmem_dbg_spray,
++			    (unsigned long long)kmem_dbg_data, (unsigned long long)kmem_dbg_meta);
+ 		}
+ 
+ 		end = start + sp.kc_size;
++		kmem_dbg_prev = sp.kc_name;
++		kmem_dbg_prev_end = end;
+ 		/*
+ 		 * Re-adjust ranges if restriction not met
+ 		 */

@@ -159,6 +159,7 @@ calibration data, or Apple's copyrighted files.
 | 0089 | PFZ commpage trylock: `ldaxr`/`stxr` loop instead of LSE `casa` on non-LSE CPUs |
 | 0090 | Full ANGELICA rebrand of the final tree (SWEET paths/identifiers removed) |
 | 0091 | Fix the 8-byte ANGELICA log magic and add `kmem_range_init` failure diagnostics |
+| 0092 | Put the `kmem_range_init` claim layout into the panic string and retry a failed claim from the map start |
 
 ## Warnings
 
