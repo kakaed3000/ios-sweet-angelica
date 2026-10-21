@@ -1,0 +1,42 @@
+--- a/bsd/dev/angelica_msdc.c
++++ b/bsd/dev/angelica_msdc.c
+@@ -540,11 +540,18 @@
+ 		if (is_char) {
+ 			return ENODEV;
+ 		}
+-		if (*f != MSDC_BLOCK) {
++		switch (*f) {
++		case 512:
++		case 1024:
++		case 2048:
++		case 4096:
++		case 8192:
++		case 16384:
++			sm.secsize = *f;
++			return 0;
++		default:
+ 			return EINVAL;
+ 		}
+-		sm.secsize = *f;
+-		return 0;
+ 	case DKIOCGETPHYSICALBLOCKSIZE:
+ 		*f = MSDC_BLOCK;
+ 		return 0;
+@@ -566,7 +573,7 @@
+ 		return 0;
+ 	case DKIOCGETMAXSEGMENTBYTECOUNTREAD:
+ 	case DKIOCGETMAXSEGMENTBYTECOUNTWRITE:
+-		*o = MSDC_BLOCK;
++		*o = MAX(sm.secsize, MSDC_BLOCK);
+ 		return 0;
+ 	case DKIOCISFORMATTED:
+ 		*f = 1;
+@@ -591,7 +598,7 @@
+ static int
+ angelica_msdc_psize(__unused dev_t dev)
+ {
+-	return sm.ready ? (int)MIN(sm.nblocks * MSDC_BLOCK / sm.secsize, INT_MAX) : -1;
++	return sm.ready ? (int)MIN(sm.nblocks, INT_MAX) : -1;
+ }
+ 
+ static int

@@ -184,6 +184,7 @@ calibration data, or Apple's copyrighted files.
 | 0114 | Set CMD16 block length and clear FIFO before CMD17 |
 | 0115 | Use basic DMA for ANGELICA CMD17 reads |
 | 0116 | Fix ANGELICA DMA phys-address type |
+| 0117 | Allow HFS+ to set a 4K logical block size |
 
 ## Warnings
 
