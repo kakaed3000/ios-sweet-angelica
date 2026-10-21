@@ -1,0 +1,45 @@
+--- a/iokit/bsddev/IOKitBSDInit.cpp
++++ b/iokit/bsddev/IOKitBSDInit.cpp
+@@ -683,11 +683,18 @@
+ 	assert(matching);
+ 	matching->setObject(gIOResourceMatchedKey, gIOBSDKey);
+ 
++#if ANGELICA_HFS
++	/* HFS is built into the kernel and registered before bsd_init; there is no
++	 * filesystem kext to wait for, and the early-boot wait can sleep forever. */
++	kprintf("IOFindBSDRoot: skipping IOBSD wait (built-in HFS)\n");
++	service = NULL;
++#else
+ 	if ((service = IOService::waitForMatchingService(matching, 30ULL * kSecondScale))) {
+ 		OSSafeReleaseNULL(service);
+ 	} else {
+ 		IOLog("!BSD\n");
+ 	}
++#endif
+ 	matching->release();
+ 	matching = NULL;
+ 
+@@ -702,6 +709,7 @@
+ 	}
+ 	rdBootVar = str.data() + kMaxPathBuf;
+ 
++	kprintf("IOFindBSDRoot: reading boot root argument\n");
+ 	if (!PE_parse_boot_argn("rd", rdBootVar, kMaxBootVar )
+ 	    && !PE_parse_boot_argn("rootdev", rdBootVar, kMaxBootVar )) {
+ 		rdBootVar[0] = 0;
+@@ -747,6 +755,7 @@
+ //	It will become /dev/mdx, where x is 0-f.
+ //
+ 
++	kprintf("IOFindBSDRoot: rdBootVar=%s\n", rdBootVar);
+ 	if (!didRam) {                                                                                           /* Have we already build this ram disk? */
+ 		didRam = 1;                                                                                             /* Remember we did this */
+ 		if ((regEntry = IORegistryEntry::fromPath( "/chosen/memory-map", gIODTPlane ))) {        /* Find the map node */
+@@ -788,6 +797,7 @@
+ //
+ //	ANGELICA: root on a GPT partition of the internal eMMC (bsd/dev/angelica_msdc.c)
+ //
++	kprintf("IOFindBSDRoot: ANGELICA eMMC root lookup\n");
+ 	if (strcmp(rdBootVar, "msdcroot0") == 0) {
+ 		extern int angelica_msdc_rootdev(dev_t *dev);
+ 		OSSafeReleaseNULL(matching);

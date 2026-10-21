@@ -172,6 +172,7 @@ calibration data, or Apple's copyrighted files.
 | 0102 | Pass the eMMC RCA in CMD3 and verify the response |
 | 0103 | Print BSD autoconf/kminit stage markers |
 | 0104 | Enable BSD init stage logs and mark setconf/vfs_mountroot |
+| 0105 | Skip the IOBSD wait for built-in ANGELICA HFS and mark root lookup |
 
 ## Warnings
 
