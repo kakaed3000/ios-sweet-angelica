@@ -40,7 +40,7 @@ markers 1–4), then stops at the next missing CPU feature. The iOS userland has
 | XNU kernel build | Works: 4K hardware page tables, 16K software pages (iOS ABI), ARMv8.0 code generation, classic non-large-memory virtual layout |
 | XNU early boot | Reaches `arm_init` and markers 1–4 (`arm_init`, platform expert, topology, CPU bootstrap) |
 | Barriers already fixed | 16K-page kernel on an A53 (the core has no 16K granule); TTBR1 walk from L0 with `T1SZ=23` under the 4K bootstrap tables; ARMv8.1 LSE atomics emitted by the Apple toolchain |
-| Current blocker | The LSE fix (`0088`, `-mcpu=cortex-a53+crypto`) is committed and being verified in CI; the resulting image has not been flashed yet |
+| Current blocker | LSE codegen fix (`0088`) plus the PFZ assembly LL/SC fallback (`0089`) are committed; CI is rebuilding them. Nothing from this round has been flashed yet |
 | iOS userland | Not started on `angelica` (no root filesystem flashed, no launchd/SpringBoard) |
 | Storage root | MSDC/eMMC root driver exists (`0083`, polled single-block reads, untested on hardware) |
 | Display/UI/touch/keys | Not implemented for `angelica` yet; the iOS graphics stack is the upstream project's |
@@ -182,6 +182,7 @@ calibration data, or Apple's copyrighted files.
 | 0086 | Commpage assert exception for the first 4K build (superseded by 0087) |
 | 0087 | Classic non-large-memory layout for 4K (TTBR1 roots at L1, `T1SZ=25`) |
 | 0088 | Build ANGELICA with `-mcpu=cortex-a53+crypto` (no ARMv8.1 LSE atomics) |
+| 0089 | PFZ commpage trylock: `ldaxr`/`stxr` loop instead of LSE `casa` on non-LSE CPUs |
 
 ## Warnings
 
