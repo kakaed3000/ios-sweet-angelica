@@ -174,6 +174,7 @@ calibration data, or Apple's copyrighted files.
 | 0104 | Enable BSD init stage logs and mark setconf/vfs_mountroot |
 | 0105 | Skip the IOBSD wait for built-in ANGELICA HFS and mark root lookup |
 | 0106 | Add ANGELICA MSDC entry/prepare/init stage markers |
+| 0107 | Match msdcroot0 by prefix and trace rootdev call |
 
 ## Warnings
 
