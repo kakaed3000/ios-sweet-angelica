@@ -48,9 +48,11 @@ jobs:
           git -C dxb checkout -q FETCH_HEAD
           # 12.5-14.3 use the top-level patches dir; ours go next to blacktop's
           cp xnu/patches/*.patch xnu/patches/*.sh dxb/patches/
-          # libfirehose_kernel is built arm64e-only; the ANGELICA kernel is plain arm64
-          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
-          grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
+          # libfirehose_kernel is built for the host default CPU (Apple M1, LSE
+          # atomics); the ANGELICA kernel is plain arm64 on Cortex-A53.  Build
+          # only the arm64 slice and target the A53 so ldadd/cas/swp don't trap.
+          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="arm64" VALID_ARCHS="arm64" OTHER_CFLAGS="-mcpu=cortex-a53+crypto"/' dxb/build.sh
+          grep -c 'OTHER_CFLAGS="-mcpu=cortex-a53+crypto"' dxb/build.sh
           ls dxb/patches
 
       - name: Deps
