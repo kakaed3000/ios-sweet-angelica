@@ -1,0 +1,122 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1079,6 +1079,38 @@
+ 	bsd_init_kprintf("done\n");
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++static void
++angelica_boot_heartbeat(void *arg __unused, wait_result_t result __unused)
++{
++	for (unsigned int i = 1; i <= 24; i++) {
++		proc_t p;
++		IOSleep(5000);
++		p = initproc;
++		if (p != NULL) {
++			kprintf("ANGELICA alive %u/24: init %s[%d]\n", i, p->p_name, proc_getpid(p));
++		} else {
++			kprintf("ANGELICA alive %u/24: initproc NULL\n", i);
++		}
++	}
++	kprintf("ANGELICA heartbeat: stopping after 120s\n");
++}
++
++static void
++angelica_start_boot_heartbeat(void)
++{
++	thread_t thread;
++	kern_return_t kr;
++
++	kr = kernel_thread_start((thread_continue_t)angelica_boot_heartbeat, NULL, &thread);
++	if (kr == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	} else {
++		kprintf("ANGELICA heartbeat: start failed %d\n", kr);
++	}
++}
++#endif
++
+ void
+ bsdinit_task(void)
+ {
+@@ -1103,9 +1135,16 @@
+ 	}
+ #endif
+ 
+-	bsd_init_kprintf("bsd_do_post - done");
++	bsd_init_kprintf("bsd_do_post - done\n");
+ 
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++	angelica_start_boot_heartbeat();
++	kprintf("ANGELICA: bsd_do_post done, starting init\n");
++#endif
+ 	load_init_program(p);
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++	kprintf("ANGELICA: load_init_program returned\n");
++#endif
+ 	lock_trace = 1;
+ }
+ 
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -1923,6 +1923,12 @@
+ 
+ 	set_proc_name(imgp, p);
+ 
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++	printf("ANGELICA exec ok: pid %d name %s spawn %d path %.*s\n",
++	    proc_getpid(p), p->p_name, spawn,
++	    (int)imgp->ip_ndp->ni_cnd.cn_namelen, imgp->ip_ndp->ni_cnd.cn_nameptr);
++#endif
++
+ #if CONFIG_SECLUDED_MEMORY
+ 	if (secluded_for_apps &&
+ 	    load_result.platform_binary) {
+@@ -5170,6 +5176,13 @@
+ 
+ exit_with_error:
+ 
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++	if (error != 0 && p != NULL) {
++		printf("ANGELICA exec fail: pid %d name %s error %d\n",
++		    proc_getpid(p), p->p_name, error);
++	}
++#endif
++
+ 	/* terminate the new task it if exec failed  */
+ 	if (new_task != NULL && task_is_exec_copy(new_task)) {
+ 		task_terminate_internal(new_task);
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1845,6 +1845,11 @@
+ 	int kr = 0;
+ 	int create_corpse = FALSE;
+ 
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++	printf("ANGELICA exit: pid %d name %s status 0x%x sig %d code %d\n",
++	    proc_getpid(p), p->p_name, rv, WTERMSIG(rv), WEXITSTATUS(rv));
++#endif
++
+ 	if (p->p_crash_behavior != 0 || p == initproc) {
+ 		proc_handle_critical_exit(p, rv);
+ 	}
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -970,6 +970,17 @@
+ 
+ out:
+ 
++#if defined(ARM64_BOARD_CONFIG_ANGELICA)
++	if (need_nameidone) {
++		printf("ANGELICA mount: type %s flags 0x%x path %.*s error %d\n",
++		    fstypename, flags, (int)nd.ni_cnd.cn_namelen,
++		    nd.ni_cnd.cn_nameptr, error);
++	} else {
++		printf("ANGELICA mount: type %s flags 0x%x error %d\n",
++		    fstypename, flags, error);
++	}
++#endif
++
+ #if CONFIG_MACF
+ 	kfree_data(labelstr, labelsz);
+ #endif /* CONFIG_MACF */
