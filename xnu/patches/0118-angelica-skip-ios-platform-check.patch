@@ -1,0 +1,18 @@
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -7387,6 +7387,7 @@
+ 	}
+ 
+ #if XNU_TARGET_OS_OSX
++#if !defined(ARM64_BOARD_CONFIG_ANGELICA)
+ 	/* Check for platform passed in spawn attr if iOS binary is being spawned */
+ 	if (proc_platform(p) == PLATFORM_IOS) {
+ 		struct _posix_spawnattr *psa = (struct _posix_spawnattr *) imgp->ip_px_sa;
+@@ -7430,6 +7431,7 @@
+ 			    p->p_name);
+ 		}
+ 	}
++#endif /* !ARM64_BOARD_CONFIG_ANGELICA */
+ #endif /* XNU_TARGET_OS_OSX */
+ 
+ 	/* If the code signature came through the image activation path, we skip the
