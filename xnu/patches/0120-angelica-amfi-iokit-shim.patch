@@ -1,0 +1,111 @@
+--- a/iokit/conf/files.arm64
++++ b/iokit/conf/files.arm64
+@@ -13,6 +13,7 @@
+ iokit/Kernel/arm/AngelicaEntitlements.cpp                           optional iokitcpp
+ iokit/Kernel/arm/AngelicaKeyStore.cpp                               optional iokitcpp
+ iokit/Kernel/arm/AngelicaWatchdog.cpp                               optional iokitcpp
++iokit/Kernel/arm/AngelicaAMFI.cpp                                   optional iokitcpp
+ iokit/Kernel/arm/AngelicaSurface.cpp                                optional iokitcpp
+ iokit/Kernel/arm/AngelicaFramebuffer.cpp                            optional iokitcpp
+ iokit/Kernel/arm/AngelicaBattery.cpp                                optional iokitcpp
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -58,6 +58,11 @@
+     "     'IOMatchCategory' = IOWatchdog;"
+     "   },"
+     "   {"
++    "     'IOClass'         = AppleMobileFileIntegrity;"
++    "     'IOProviderClass' = IOResources;"
++    "     'IOMatchCategory' = AppleMobileFileIntegrity;"
++    "   },"
++    "   {"
+     "     'IOClass'         = IOCoreSurfaceRoot;"
+     "     'IOProviderClass' = IOResources;"
+     "     'IOMatchCategory' = IOCoreSurfaceRoot;"
+--- /dev/null
++++ b/iokit/Kernel/arm/AngelicaAMFI.cpp
+@@ -0,0 +1,84 @@
++#include <pexpert/arm64/board_config.h>
++
++#if defined(ANGELICA)
++#include <IOKit/IOService.h>
++#include <IOKit/IOUserClient.h>
++#include <IOKit/IOKitKeys.h>
++#include <IOKit/IOLib.h>
++#include <IOKit/IOMemoryDescriptor.h>
++#include <sys/proc.h>
++
++class AppleMobileFileIntegrity : public IOService {
++	OSDeclareDefaultStructors(AppleMobileFileIntegrity);
++
++public:
++	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
++};
++
++OSDefineMetaClassAndStructors(AppleMobileFileIntegrity, IOService);
++
++bool
++AppleMobileFileIntegrity::start(IOService *provider)
++{
++	if (!IOService::start(provider)) {
++		return false;
++	}
++	setProperty(kIOUserClientClassKey, "AppleMobileFileIntegrityUserClient");
++	registerService();
++	IOLog("ANGELICA AMFI: AppleMobileFileIntegrity registered\n");
++	return true;
++}
++
++class AppleMobileFileIntegrityUserClient : public IOUserClient {
++	OSDeclareDefaultStructors(AppleMobileFileIntegrityUserClient);
++
++public:
++	IOReturn clientClose(void) APPLE_KEXT_OVERRIDE;
++	IOReturn externalMethod(uint32_t selector, IOExternalMethodArguments *args,
++	    IOExternalMethodDispatch *dispatch, OSObject *target,
++	    void *reference) APPLE_KEXT_OVERRIDE;
++};
++
++OSDefineMetaClassAndStructors(AppleMobileFileIntegrityUserClient, IOUserClient);
++
++IOReturn
++AppleMobileFileIntegrityUserClient::clientClose(void)
++{
++	terminate();
++	return kIOReturnSuccess;
++}
++
++static uint64_t angelica_amfi_logged;
++
++IOReturn
++AppleMobileFileIntegrityUserClient::externalMethod(uint32_t selector, IOExternalMethodArguments *args,
++    __unused IOExternalMethodDispatch *dispatch, __unused OSObject *target,
++    __unused void *reference)
++{
++	for (uint32_t i = 0; i < args->scalarOutputCount; i++) {
++		args->scalarOutput[i] = 0;
++	}
++	if (args->structureOutputDescriptor != NULL) {
++		IOByteCount len = args->structureOutputDescriptor->getLength();
++		for (IOByteCount off = 0; off < len; off += 8) {
++			static const uint64_t zero = 0;
++			args->structureOutputDescriptor->writeBytes(off, &zero,
++			    len - off < 8 ? len - off : 8);
++		}
++	} else if (args->structureOutput != NULL) {
++		bzero(args->structureOutput, args->structureOutputSize);
++	}
++
++	if (selector >= 64 || !(angelica_amfi_logged & (1ULL << selector))) {
++		if (selector < 64) {
++			angelica_amfi_logged |= 1ULL << selector;
++		}
++		char name[32];
++		proc_selfname(name, sizeof(name));
++		IOLog("ANGELICA AMFI: %s sel %u in %u/%u out %u/%u -> ok\n", name, selector,
++		    args->scalarInputCount, args->structureInputSize,
++		    args->scalarOutputCount, args->structureOutputSize);
++	}
++	return kIOReturnSuccess;
++}
++#endif /* ANGELICA */
