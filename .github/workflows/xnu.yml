@@ -51,8 +51,8 @@ jobs:
           # libfirehose_kernel is built for the host default CPU (Apple M1, LSE
           # atomics); the ANGELICA kernel is plain arm64 on Cortex-A53.  Build
           # only the arm64 slice and target the A53 so ldadd/cas/swp don't trap.
-          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="arm64" VALID_ARCHS="arm64" OTHER_CFLAGS="-mcpu=cortex-a53+crypto"/' dxb/build.sh
-          grep -c 'OTHER_CFLAGS="-mcpu=cortex-a53+crypto"' dxb/build.sh
+          sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="arm64" VALID_ARCHS="arm64" OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -mcpu=cortex-a53+crypto"/' dxb/build.sh
+          grep -c 'OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -mcpu=cortex-a53+crypto"' dxb/build.sh
           ls dxb/patches
 
       - name: Deps
