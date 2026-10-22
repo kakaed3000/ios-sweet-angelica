@@ -1,0 +1,24 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -1083,17 +1083,16 @@
+ static void
+ angelica_boot_heartbeat(void *arg __unused, wait_result_t result __unused)
+ {
+-	for (unsigned int i = 1; i <= 24; i++) {
++	for (unsigned int i = 1; ; i++) {
+ 		proc_t p;
+-		IOSleep(5000);
++		IOSleep(15000);
+ 		p = initproc;
+ 		if (p != NULL) {
+-			kprintf("ANGELICA alive %u/24: init %s[%d]\n", i, p->p_name, proc_getpid(p));
++			kprintf("ANGELICA alive %u: init %s[%d]\n", i, p->p_name, proc_getpid(p));
+ 		} else {
+-			kprintf("ANGELICA alive %u/24: initproc NULL\n", i);
++			kprintf("ANGELICA alive %u: initproc NULL\n", i);
+ 		}
+ 	}
+-	kprintf("ANGELICA heartbeat: stopping after 120s\n");
+ }
+ 
+ static void
